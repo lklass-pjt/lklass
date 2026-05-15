@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -41,6 +42,19 @@ public class GlobalExceptionHandler {
                 .orElse(errorCode.message());
 
         AppLog.validationFailed(log, errorCode, exception.getBindingResult().getErrorCount(), message);
+
+        return ResponseEntity
+                .status(errorCode.httpStatus())
+                .body(CommonResponse.fail(errorCode.code(), message, traceId));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<CommonResponse<Void>> handleMessageNotReadable(HttpMessageNotReadableException exception) {
+        ErrorCode errorCode = GlobalErrorCode.VALIDATION_ERROR;
+        String traceId = MDC.get(TraceContext.TRACE_ID_KEY);
+        String message = "request body: 요청 본문을 읽을 수 없습니다.";
+
+        AppLog.warn(log, errorCode.code(), exception.getMessage());
 
         return ResponseEntity
                 .status(errorCode.httpStatus())

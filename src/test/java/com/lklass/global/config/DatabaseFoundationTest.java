@@ -110,7 +110,7 @@ class DatabaseFoundationTest {
         Duration accessTokenTtl = jwtProperties.accessTokenTtl();
 
         // then
-        assertThat(secret).isEqualTo("local-dev-secret-change-me");
+        assertThat(secret).isEqualTo("local-dev-secret-change-me-32bytes-minimum");
         assertThat(accessTokenTtl).isEqualTo(Duration.ofHours(1));
     }
 }
