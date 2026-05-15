@@ -76,9 +76,13 @@ workflow: implement
   - Slice 4-B 완료: 회원가입 서비스, UserRepository wrapper, PasswordEncoder 추가
   - `AuthServiceTest`: 비밀번호 암호화 저장, userId 반환, 중복 email 예외 검증
   - 테스트 워크플로우 보강: User 필수 필드 null 방어와 BCrypt PasswordEncoder 검증 추가
+  - Slice 4-C 완료: JWT access token 발급/검증, 로그인 서비스, 회원가입 accessToken 반환 적용
+  - `JwtTokenProviderTest`: token claim 파싱, 만료 token, 잘못된 token 검증
+  - `AuthServiceTest`: 회원가입 token 반환, 로그인 성공/실패 검증
 - 검증:
   - `./gradlew test --tests com.lklass.domain.user.entity.UserPersistenceTest` 통과
   - `./gradlew test --tests com.lklass.domain.auth.service.AuthServiceTest` 통과
+  - `./gradlew test --tests com.lklass.global.security.JwtTokenProviderTest` 통과
   - `./gradlew test` 통과
 - 실행/검증 가능 항목:
   - 회원가입 성공

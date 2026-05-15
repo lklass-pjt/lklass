@@ -21,7 +21,7 @@ spring:
 
 lklass:
   jwt:
-    secret: ${JWT_SECRET:local-dev-secret-change-me}
+    secret: ${JWT_SECRET:local-dev-secret-change-me-32bytes-minimum}
     access-token-ttl: 1h
   policy:
     pending-payment-ttl: 30m
