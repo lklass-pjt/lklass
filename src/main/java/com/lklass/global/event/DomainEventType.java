@@ -1,0 +1,12 @@
+package com.lklass.global.event;
+
+public enum DomainEventType {
+    USER_CREATED,
+    COURSE_CREATED,
+    COURSE_OPENED,
+    COURSE_CLOSED,
+    ENROLLMENT_CREATED,
+    ENROLLMENT_CONFIRMED,
+    ENROLLMENT_CANCELLED,
+    ENROLLMENT_EXPIRED
+}
