@@ -79,10 +79,12 @@ workflow: implement
   - Slice 4-C 완료: JWT access token 발급/검증, 로그인 서비스, 회원가입 accessToken 반환 적용
   - `JwtTokenProviderTest`: token claim 파싱, 만료 token, 잘못된 token 검증
   - `AuthServiceTest`: 회원가입 token 반환, 로그인 성공/실패 검증
+  - Slice 4-D 완료: AuthController, 요청 DTO validation 메시지, AuthSecurityConfigurer, SecurityConfig 추가
 - 검증:
   - `./gradlew test --tests com.lklass.domain.user.entity.UserPersistenceTest` 통과
   - `./gradlew test --tests com.lklass.domain.auth.service.AuthServiceTest` 통과
   - `./gradlew test --tests com.lklass.global.security.JwtTokenProviderTest` 통과
+  - `./gradlew test --tests com.lklass.domain.auth.controller.AuthControllerTest` 통과
   - `./gradlew test` 통과
 - 실행/검증 가능 항목:
   - 회원가입 성공
