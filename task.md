@@ -69,7 +69,17 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 2, Slice 3
-- 상태: 대기
+- 상태: 진행 중
+- 진행 내역:
+  - Slice 4-A 완료: User 엔티티, UserRole, users Flyway migration, UserJpaRepository 추가
+  - `UserPersistenceTest`: User 저장/조회와 email unique 제약 검증
+  - Slice 4-B 완료: 회원가입 서비스, UserRepository wrapper, PasswordEncoder 추가
+  - `AuthServiceTest`: 비밀번호 암호화 저장, userId 반환, 중복 email 예외 검증
+  - 테스트 워크플로우 보강: User 필수 필드 null 방어와 BCrypt PasswordEncoder 검증 추가
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.user.entity.UserPersistenceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.auth.service.AuthServiceTest` 통과
+  - `./gradlew test` 통과
 - 실행/검증 가능 항목:
   - 회원가입 성공
   - 로그인 시 access token 반환
