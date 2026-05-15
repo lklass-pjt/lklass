@@ -80,12 +80,19 @@ workflow: implement
   - `JwtTokenProviderTest`: token claim 파싱, 만료 token, 잘못된 token 검증
   - `AuthServiceTest`: 회원가입 token 반환, 로그인 성공/실패 검증
   - Slice 4-D 완료: AuthController, 요청 DTO validation 메시지, AuthSecurityConfigurer, SecurityConfig 추가
+  - Slice 4-E1 완료: JwtAuthenticationFilter, AuthenticatedUser, SecurityContext 인증 저장 추가
+  - Slice 4-E2 완료: AuthenticationEntryPoint, AccessDeniedHandler 공통 실패 응답 추가
+  - 테스트 워크플로우 보강: 잘못된 Bearer Access Token의 MVC 공통 실패 응답 검증 추가
 - 검증:
   - `./gradlew test --tests com.lklass.domain.user.entity.UserPersistenceTest` 통과
   - `./gradlew test --tests com.lklass.domain.auth.service.AuthServiceTest` 통과
   - `./gradlew test --tests com.lklass.global.security.JwtTokenProviderTest` 통과
   - `./gradlew test --tests com.lklass.domain.auth.controller.AuthControllerTest` 통과
+  - `./gradlew test --tests com.lklass.global.security.JwtAuthenticationFilterTest` 통과
+  - `./gradlew test --tests com.lklass.global.common.CommonResponseTest --tests com.lklass.domain.auth.controller.AuthControllerTest --tests com.lklass.global.security.JwtAuthenticationFilterTest` 통과
+  - `./gradlew test --tests com.lklass.global.security.JwtAuthenticationFilterTest --tests com.lklass.domain.auth.controller.AuthControllerTest` 통과
   - `./gradlew test` 통과
+  - `./gradlew check` 통과
 - 실행/검증 가능 항목:
   - 회원가입 성공
   - 로그인 시 access token 반환

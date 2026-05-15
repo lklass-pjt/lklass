@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lklass.domain.auth.config.AuthSecurityConfigurer;
 import com.lklass.domain.auth.dto.AccessTokenResult;
 import com.lklass.domain.auth.exception.AuthErrorCode;
@@ -17,17 +16,35 @@ import com.lklass.domain.user.entity.UserRole;
 import com.lklass.domain.user.exception.UserErrorCode;
 import com.lklass.global.config.SecurityConfig;
 import com.lklass.global.exception.BusinessException;
+import com.lklass.global.exception.GlobalErrorCode;
+import com.lklass.global.security.DomainSecurityConfigurer;
+import com.lklass.global.security.JwtAuthenticationFilter;
+import com.lklass.global.security.JwtTokenProvider;
+import com.lklass.global.security.RestAccessDeniedHandler;
+import com.lklass.global.security.RestAuthenticationEntryPoint;
+import com.lklass.global.security.SecurityErrorResponder;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.servlet.HandlerExceptionResolver;
+import tools.jackson.databind.ObjectMapper;
 
-@Import({SecurityConfig.class, AuthSecurityConfigurer.class})
+@Import({
+        SecurityConfig.class,
+        AuthSecurityConfigurer.class,
+        SecurityErrorResponder.class,
+        RestAuthenticationEntryPoint.class,
+        RestAccessDeniedHandler.class,
+        AuthControllerTest.TestSecurityFilterConfig.class
+})
 @WebMvcTest(controllers = AuthController.class)
 class AuthControllerTest {
 
@@ -38,6 +55,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @Autowired
+    private JwtTokenProvider jwtTokenProvider;
 
     @Test
     @DisplayName("회원가입 API는 요청을 검증한 뒤 Access Token을 공통 성공 응답으로 반환한다")
@@ -189,7 +209,26 @@ class AuthControllerTest {
 
         // when & then
         mockMvc.perform(get("/api/courses"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.UNAUTHORIZED.code()))
+                .andExpect(jsonPath("$.message").value(GlobalErrorCode.UNAUTHORIZED.message()));
+    }
+
+    @Test
+    @DisplayName("잘못된 Bearer Access Token이면 AUTH_INVALID_TOKEN 공통 실패 응답을 반환한다")
+    void rejectInvalidBearerToken() throws Exception {
+        // given
+        when(jwtTokenProvider.getUserId("invalid-token"))
+                .thenThrow(new BusinessException(AuthErrorCode.INVALID_TOKEN));
+
+        // when & then
+        mockMvc.perform(get("/api/courses")
+                        .header("Authorization", "Bearer invalid-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(AuthErrorCode.INVALID_TOKEN.code()))
+                .andExpect(jsonPath("$.message").value(AuthErrorCode.INVALID_TOKEN.message()));
     }
 
     @Test
@@ -204,6 +243,21 @@ class AuthControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    @WithMockUser(roles = "STUDENT")
+    @DisplayName("인증된 사용자라도 권한이 부족하면 403 공통 실패 응답을 반환한다")
+    void rejectForbiddenApi() throws Exception {
+        // given
+        // 테스트 전용 관리자 API 권한 규칙을 사용해 AccessDeniedHandler 응답을 검증한다.
+
+        // when & then
+        mockMvc.perform(get("/api/admin/reports"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.FORBIDDEN.code()))
+                .andExpect(jsonPath("$.message").value(GlobalErrorCode.FORBIDDEN.message()));
+    }
+
     private record SignupRequestFixture(
             String email,
             String password,
@@ -216,5 +270,28 @@ class AuthControllerTest {
             String email,
             String password
     ) {
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestSecurityFilterConfig {
+
+        @Bean
+        JwtAuthenticationFilter jwtAuthenticationFilter(
+                JwtTokenProvider jwtTokenProvider,
+                HandlerExceptionResolver handlerExceptionResolver
+        ) {
+            return new JwtAuthenticationFilter(jwtTokenProvider, handlerExceptionResolver);
+        }
+
+        @Bean
+        JwtTokenProvider jwtTokenProvider() {
+            return org.mockito.Mockito.mock(JwtTokenProvider.class);
+        }
+
+        @Bean
+        DomainSecurityConfigurer testAdminSecurityConfigurer() {
+            return authorize -> authorize
+                    .requestMatchers("/api/admin/**").hasRole("ADMIN");
+        }
     }
 }
