@@ -449,6 +449,32 @@ workflow: implement
   - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
   - `./gradlew test` 통과
 
+### Slice 7-D. 수강 신청 API
+
+- 상태: 완료
+- 목표:
+  - 수강 신청 service use case를 HTTP API로 노출
+  - 수강 신청 성공/실패 API 응답 계약 고정
+- 완료 내역:
+  - `POST /api/courses/{courseId}/enrollments` API 추가
+  - EnrollmentApplyResponse DTO 추가
+  - EnrollmentController WebMvcTest 추가
+- 현재 검증 가능 항목:
+  - 인증된 STUDENT 수강 신청 성공 응답
+  - 미인증 요청 401 응답
+  - 권한 없는 요청 403 응답
+  - 활성 중복 신청 409 응답
+  - 정원 초과 409 응답
+  - 신청 불가 Course 400 응답
+  - 존재하지 않는 Course 404 응답
+  - 존재하지 않는 사용자 404 응답
+  - 잘못된 `courseId` path variable 400 validation 응답
+- 검증:
+  - 테스트 워크플로우 보강: 사용자 없음 404와 잘못된 `courseId` 400 API 계약 추가
+  - `./gradlew test --tests com.lklass.domain.enrollment.controller.EnrollmentControllerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
+
 ## Slice 8. 결제 확정과 취소
 
 - 유형: AFK
