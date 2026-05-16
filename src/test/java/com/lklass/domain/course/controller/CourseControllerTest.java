@@ -356,6 +356,20 @@ class CourseControllerTest {
     }
 
     @Test
+    @DisplayName("Course 게시 예약 API는 자동 게시 예약에 성공하면 성공 응답을 반환한다")
+    void reserveCoursePublication() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+
+        // when & then
+        mockMvc.perform(post("/api/courses/100/publish-reservation")
+                        .header("Authorization", "Bearer creator-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        verify(courseService).reserveCoursePublication(100L);
+    }
+
+    @Test
     @DisplayName("Course OPEN API는 인증이 없으면 401 공통 실패 응답을 반환한다")
     void rejectUnauthenticatedCourseOpen() throws Exception {
         // given
@@ -369,6 +383,17 @@ class CourseControllerTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(GlobalErrorCode.UNAUTHORIZED.code()));
         verify(courseService, never()).openCourse(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Course 게시 예약 API는 인증이 없으면 401 공통 실패 응답을 반환한다")
+    void rejectUnauthenticatedCoursePublicationReservation() throws Exception {
+        // when & then
+        mockMvc.perform(post("/api/courses/100/publish-reservation"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.UNAUTHORIZED.code()));
+        verify(courseService, never()).reserveCoursePublication(any());
     }
 
     @Test
@@ -465,6 +490,74 @@ class CourseControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.code").value(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION.code()));
+    }
+
+    @Test
+    @DisplayName("Course 게시 예약 API는 권한이 없으면 403 공통 실패 응답을 반환한다")
+    void rejectForbiddenCoursePublicationReservation() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+        doThrow(new AccessDeniedException("Access Denied"))
+                .when(courseService)
+                .reserveCoursePublication(100L);
+
+        // when & then
+        mockMvc.perform(post("/api/courses/100/publish-reservation")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.FORBIDDEN.code()));
+    }
+
+    @Test
+    @DisplayName("Course 게시 예약 API는 잘못된 상태 전이면 400 공통 실패 응답을 반환한다")
+    void rejectInvalidCourseStatusTransitionOnPublicationReservation() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+        doThrow(new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION))
+                .when(courseService)
+                .reserveCoursePublication(100L);
+
+        // when & then
+        mockMvc.perform(post("/api/courses/100/publish-reservation")
+                        .header("Authorization", "Bearer creator-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION.code()));
+    }
+
+    @Test
+    @DisplayName("Course 게시 예약 API는 모집/수강 기간이 올바르지 않으면 400 공통 실패 응답을 반환한다")
+    void rejectInvalidEnrollmentPeriodOnPublicationReservation() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+        doThrow(new BusinessException(CourseErrorCode.INVALID_ENROLLMENT_PERIOD))
+                .when(courseService)
+                .reserveCoursePublication(100L);
+
+        // when & then
+        mockMvc.perform(post("/api/courses/100/publish-reservation")
+                        .header("Authorization", "Bearer creator-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CourseErrorCode.INVALID_ENROLLMENT_PERIOD.code()));
+    }
+
+    @Test
+    @DisplayName("Course 게시 예약 API는 ADMIN이 요청한 Course가 없으면 404 공통 실패 응답을 반환한다")
+    void rejectUnknownCoursePublicationReservationByAdmin() throws Exception {
+        // given
+        mockToken("admin-token", 99L, UserRole.ADMIN);
+        doThrow(new BusinessException(CourseErrorCode.COURSE_NOT_FOUND))
+                .when(courseService)
+                .reserveCoursePublication(999_999L);
+
+        // when & then
+        mockMvc.perform(post("/api/courses/999999/publish-reservation")
+                        .header("Authorization", "Bearer admin-token"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CourseErrorCode.COURSE_NOT_FOUND.code()));
     }
 
     private void mockToken(String token, Long userId, UserRole role) {

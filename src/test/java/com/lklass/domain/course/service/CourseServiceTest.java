@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.lklass.TestcontainersConfiguration;
 import com.lklass.domain.course.dto.CourseCreateResult;
 import com.lklass.domain.course.dto.CourseQueryResult;
+import com.lklass.domain.course.entity.Course;
 import com.lklass.domain.course.entity.CourseStatus;
 import com.lklass.domain.course.entity.CourseStatusChangedBy;
 import com.lklass.domain.course.entity.CourseStatusChangeReason;
@@ -40,6 +41,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @Import({TestcontainersConfiguration.class, CourseServiceTest.FixedClockConfig.class})
 @SpringBootTest
@@ -601,6 +603,509 @@ class CourseServiceTest {
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.COURSE_NOT_FOUND)
                 );
+    }
+
+    @Test
+    @DisplayName("CREATOR는 본인 DRAFT Course에 자동 게시 예약을 설정할 수 있다")
+    void reserveCoursePublicationByCreator() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-creator@example.com",
+                "encoded-password",
+                "예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "예약 게시 대상 강의");
+
+        // when
+        courseService.reserveCoursePublication(createdCourse.id());
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.isAutoPublishEnabled()).isTrue();
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                });
+    }
+
+    @Test
+    @DisplayName("ADMIN은 다른 CREATOR의 DRAFT Course에 자동 게시 예약을 설정할 수 있다")
+    void reserveCoursePublicationByAdmin() {
+        // given
+        User admin = userRepository.save(User.create(
+                "reserve-admin@example.com",
+                "encoded-password",
+                "예약 관리자",
+                UserRole.ADMIN
+        ));
+        User creator = userRepository.save(User.create(
+                "reserve-admin-target@example.com",
+                "encoded-password",
+                "예약 대상 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser adminActor = authenticate(admin.getId(), UserRole.ADMIN);
+        CourseCreateResult createdCourse = createCourse(adminActor, creator.getId(), "관리자 예약 대상 강의");
+
+        // when
+        courseService.reserveCoursePublication(createdCourse.id());
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.isAutoPublishEnabled()).isTrue();
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                });
+    }
+
+    @Test
+    @DisplayName("OPEN Course에 자동 게시 예약을 설정하면 INVALID_COURSE_STATUS_TRANSITION 예외가 발생한다")
+    void rejectAutoPublishReservationForOpenCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-open-creator@example.com",
+                "encoded-password",
+                "오픈 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "오픈 예약 실패 강의");
+        courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("모집 마감이 지난 DRAFT Course에 자동 게시 예약을 설정하면 ENROLLMENT_CLOSED 예외가 발생한다")
+    void rejectAutoPublishReservationAfterEnrollmentClosed() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-closed-enrollment@example.com",
+                "encoded-password",
+                "마감 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = courseService.createCourse(
+                actor,
+                null,
+                "마감 지난 예약 실패 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                NOW,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("모집 마감일이 수강 시작일 이전이 아닌 Course에 자동 게시 예약을 설정하면 INVALID_ENROLLMENT_PERIOD 예외가 발생한다")
+    void rejectAutoPublishReservationWithInvalidEnrollmentPeriod() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-invalid-period-creator@example.com",
+                "encoded-password",
+                "기간 오류 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = courseService.createCourse(
+                actor,
+                null,
+                "기간 오류 예약 실패 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                ENROLLMENT_START_AT,
+                COURSE_START_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.INVALID_ENROLLMENT_PERIOD)
+                );
+    }
+
+    @Test
+    @DisplayName("CREATOR는 다른 CREATOR의 Course에 자동 게시 예약을 설정할 수 없다")
+    void rejectAutoPublishReservationForOtherCreatorCourse() {
+        // given
+        User owner = userRepository.save(User.create(
+                "reserve-owner@example.com",
+                "encoded-password",
+                "예약 소유자",
+                UserRole.CREATOR
+        ));
+        User otherCreator = userRepository.save(User.create(
+                "reserve-other@example.com",
+                "encoded-password",
+                "예약 타인",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser ownerActor = authenticate(owner.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(ownerActor, null, "타인 예약 실패 강의");
+        authenticate(otherCreator.getId(), UserRole.CREATOR);
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("CREATOR는 존재하지 않는 Course 게시 예약을 요청해도 소유 확인에서 차단된다")
+    void rejectCreatorToReserveUnknownCoursePublication() {
+        // given
+        authenticate(1L, UserRole.CREATOR);
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(unknownCourseId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("ADMIN의 존재하지 않는 Course 게시 예약은 COURSE_NOT_FOUND 예외가 발생한다")
+    void rejectUnknownCoursePublicationReservationByAdmin() {
+        // given
+        authenticate(99L, UserRole.ADMIN);
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(unknownCourseId))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.COURSE_NOT_FOUND)
+                );
+    }
+
+    @Test
+    @DisplayName("예약된 DRAFT Course가 모집 시작 시간이 되면 자동 OPEN되고 AUTO_OPENED 이력이 저장된다")
+    void openReservedCourses() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-open-creator@example.com",
+                "encoded-password",
+                "자동 오픈 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = courseService.createCourse(
+                actor,
+                null,
+                "자동 오픈 대상 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                MANUAL_ENROLLMENT_END_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+        courseService.reserveCoursePublication(createdCourse.id());
+
+        // when
+        int openedCount = courseService.openReservedCourses();
+
+        // then
+        assertThat(openedCount).isEqualTo(1);
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN);
+                    assertThat(course.isAutoPublishEnabled()).isFalse();
+                });
+        assertThat(courseStatusHistoryRepository.findAllByCourseId(createdCourse.id()))
+                .filteredOn(history -> history.getReason() == CourseStatusChangeReason.AUTO_OPENED)
+                .singleElement()
+                .satisfies(history -> {
+                    assertThat(history.getFromStatus()).isEqualTo(CourseStatus.DRAFT);
+                    assertThat(history.getToStatus()).isEqualTo(CourseStatus.OPEN);
+                    assertThat(history.getChangedAt()).isEqualTo(NOW);
+                    assertThat(history.getChangedBy()).isEqualTo(CourseStatusChangedBy.system());
+                });
+    }
+
+    @Test
+    @DisplayName("자동 OPEN 대상이 여러 개면 모두 OPEN하고 대상 수를 반환한다")
+    void openMultipleReservedCourses() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-open-multiple-creator@example.com",
+                "encoded-password",
+                "복수 자동 오픈 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult firstCourse = createAutoOpenTarget(actor, "복수 자동 오픈 강의 A");
+        CourseCreateResult secondCourse = createAutoOpenTarget(actor, "복수 자동 오픈 강의 B");
+        courseService.reserveCoursePublication(firstCourse.id());
+        courseService.reserveCoursePublication(secondCourse.id());
+
+        // when
+        int openedCount = courseService.openReservedCourses();
+
+        // then
+        assertThat(openedCount).isEqualTo(2);
+        assertThat(courseRepository.findById(firstCourse.id()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN));
+        assertThat(courseRepository.findById(secondCourse.id()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN));
+    }
+
+    @Test
+    @DisplayName("예약 플래그가 없는 DRAFT Course는 자동 OPEN 대상에서 제외된다")
+    void skipDraftCourseWithoutAutoPublishReservation() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-open-not-reserved-creator@example.com",
+                "encoded-password",
+                "미예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createAutoOpenTarget(actor, "미예약 자동 오픈 제외 강의");
+
+        // when
+        int openedCount = courseService.openReservedCourses();
+
+        // then
+        assertThat(openedCount).isZero();
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                    assertThat(course.isAutoPublishEnabled()).isFalse();
+                });
+    }
+
+    @Test
+    @DisplayName("예약된 DRAFT Course라도 모집 시작 전이면 자동 OPEN 대상에서 제외된다")
+    void skipReservedCourseBeforeEnrollmentStartAt() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-open-future-creator@example.com",
+                "encoded-password",
+                "미래 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "미래 예약 강의");
+        courseService.reserveCoursePublication(createdCourse.id());
+
+        // when
+        int openedCount = courseService.openReservedCourses();
+
+        // then
+        assertThat(openedCount).isZero();
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                    assertThat(course.isAutoPublishEnabled()).isTrue();
+                });
+    }
+
+    @Test
+    @DisplayName("예약 플래그가 있어도 모집 마감이 지난 Course는 자동 OPEN 대상에서 제외된다")
+    void skipExpiredReservedCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-open-expired-creator@example.com",
+                "encoded-password",
+                "만료 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        Course course = Course.create(
+                creator.getId(),
+                "만료 예약 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                LocalDateTime.of(2026, 5, 15, 10, 0),
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+        ReflectionTestUtils.setField(course, "autoPublishEnabled", true);
+        Course savedCourse = courseRepository.save(course);
+
+        // when
+        int openedCount = courseService.openReservedCourses();
+
+        // then
+        assertThat(openedCount).isZero();
+        assertThat(courseRepository.findById(savedCourse.getId()))
+                .hasValueSatisfying(foundCourse -> {
+                    assertThat(foundCourse.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                    assertThat(foundCourse.isAutoPublishEnabled()).isTrue();
+                });
+    }
+
+    @Test
+    @DisplayName("모집 마감이 지난 OPEN Course는 자동 CLOSED되고 AUTO_CLOSED 이력이 저장된다")
+    void closeExpiredOpenCourses() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-close-creator@example.com",
+                "encoded-password",
+                "자동 마감 크리에이터",
+                UserRole.CREATOR
+        ));
+        Course course = Course.create(
+                creator.getId(),
+                "자동 마감 대상 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                NOW,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+        course.openManually(LocalDateTime.of(2026, 5, 1, 10, 0), NOW);
+        Course savedCourse = courseRepository.save(course);
+
+        // when
+        int closedCount = courseService.closeExpiredOpenCourses();
+
+        // then
+        assertThat(closedCount).isEqualTo(1);
+        assertThat(courseRepository.findById(savedCourse.getId()))
+                .hasValueSatisfying(foundCourse -> {
+                    assertThat(foundCourse.getStatus()).isEqualTo(CourseStatus.CLOSED);
+                    assertThat(foundCourse.isAutoPublishEnabled()).isFalse();
+                });
+        assertThat(courseStatusHistoryRepository.findAllByCourseId(savedCourse.getId()))
+                .filteredOn(history -> history.getReason() == CourseStatusChangeReason.AUTO_CLOSED)
+                .singleElement()
+                .satisfies(history -> {
+                    assertThat(history.getFromStatus()).isEqualTo(CourseStatus.OPEN);
+                    assertThat(history.getToStatus()).isEqualTo(CourseStatus.CLOSED);
+                    assertThat(history.getChangedAt()).isEqualTo(NOW);
+                    assertThat(history.getChangedBy()).isEqualTo(CourseStatusChangedBy.system());
+                });
+    }
+
+    @Test
+    @DisplayName("자동 CLOSED 대상이 여러 개면 모두 CLOSED하고 대상 수를 반환한다")
+    void closeMultipleExpiredOpenCourses() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-close-multiple-creator@example.com",
+                "encoded-password",
+                "복수 자동 마감 크리에이터",
+                UserRole.CREATOR
+        ));
+        Course firstCourse = courseRepository.save(expiredOpenCourse(creator.getId(), "복수 자동 마감 강의 A"));
+        Course secondCourse = courseRepository.save(expiredOpenCourse(creator.getId(), "복수 자동 마감 강의 B"));
+
+        // when
+        int closedCount = courseService.closeExpiredOpenCourses();
+
+        // then
+        assertThat(closedCount).isEqualTo(2);
+        assertThat(courseRepository.findById(firstCourse.getId()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.CLOSED));
+        assertThat(courseRepository.findById(secondCourse.getId()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.CLOSED));
+    }
+
+    @Test
+    @DisplayName("모집 마감이 지났어도 OPEN이 아닌 Course는 자동 CLOSED 대상에서 제외된다")
+    void skipExpiredNonOpenCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-close-draft-creator@example.com",
+                "encoded-password",
+                "초안 자동 마감 제외 크리에이터",
+                UserRole.CREATOR
+        ));
+        Course savedCourse = courseRepository.save(Course.create(
+                creator.getId(),
+                "초안 자동 마감 제외 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                NOW,
+                COURSE_START_AT,
+                COURSE_END_AT
+        ));
+
+        // when
+        int closedCount = courseService.closeExpiredOpenCourses();
+
+        // then
+        assertThat(closedCount).isZero();
+        assertThat(courseRepository.findById(savedCourse.getId()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT));
+    }
+
+    @Test
+    @DisplayName("아직 모집 중인 OPEN Course는 자동 CLOSED 대상에서 제외된다")
+    void skipOpenCourseBeforeEnrollmentEndAt() {
+        // given
+        User creator = userRepository.save(User.create(
+                "auto-close-active-creator@example.com",
+                "encoded-password",
+                "모집 중 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createAutoOpenTarget(actor, "모집 중 자동 마감 제외 강의");
+        courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+
+        // when
+        int closedCount = courseService.closeExpiredOpenCourses();
+
+        // then
+        assertThat(closedCount).isZero();
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN));
+    }
+
+    private Course expiredOpenCourse(Long creatorId, String title) {
+        Course course = Course.create(
+                creatorId,
+                title,
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                NOW,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+        course.openManually(LocalDateTime.of(2026, 5, 1, 10, 0), NOW);
+        return course;
+    }
+
+    private CourseCreateResult createAutoOpenTarget(AuthenticatedUser actor, String title) {
+        return courseService.createCourse(
+                actor,
+                null,
+                title,
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                MANUAL_ENROLLMENT_END_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
     }
 
     private CourseCreateResult createCourse(AuthenticatedUser actor, Long requestedCreatorId, String title) {

@@ -109,7 +109,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 4
-- 상태: 진행 중
+- 상태: 완료
 - 전체 목표:
   - creator가 Course 생성
   - Course 목록 조회와 상태 필터
@@ -254,7 +254,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 5
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - 예약된 Course 자동 OPEN
   - 모집 마감 Course 자동 CLOSED
@@ -265,6 +265,96 @@ workflow: implement
   - Course 자동 상태 전환 스케줄러
   - scheduler properties
   - Clock 기반 테스트
+
+### Slice 6-A. Course 게시/모집 예약
+
+- 상태: 완료
+- 목표:
+  - creator/admin이 DRAFT Course를 자동 OPEN 대상에 포함하도록 예약
+  - DRAFT가 아닌 Course에는 자동 게시 예약 불가
+  - 모집 마감이 이미 지난 Course에는 자동 게시 예약 불가
+- 진행 내역:
+  - Course 자동 게시 예약 도메인 메서드 추가
+  - Course 게시 예약 service/API 추가
+  - Course 게시 예약 권한은 기존 Course 관리 권한과 동일하게 적용
+  - 리뷰 보강: 자동 게시 예약도 모집 마감일이 수강 시작일 이전인지 검증
+  - 테스트 워크플로우 보강: 게시 예약 service/API 성공, 권한, unknown Course, 상태/기간 실패 계약 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 6-B1. 예약된 Course 자동 OPEN 유스케이스
+
+- 상태: 완료
+- 목표:
+  - 예약 게시된 DRAFT Course가 모집 시작 시간이 되면 자동 OPEN
+  - 자동 OPEN 시 AUTO_OPENED 상태 이력을 SYSTEM 변경 주체로 저장
+  - 모집 시작 전/모집 마감 후 Course는 자동 OPEN 대상에서 제외
+- 진행 내역:
+  - Course 자동 OPEN 도메인 메서드 추가
+  - 자동 OPEN 대상 조회 repository query 추가
+  - CourseService에 스케줄러가 호출할 openReservedCourses use case 추가
+  - 수동 OPEN 성공 시 자동 게시 예약 플래그를 해제하도록 보강
+  - 테스트 워크플로우 보강: 자동 OPEN 시간 경계, 미예약 제외, 복수 대상 처리 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 6-B2. Course 자동 OPEN 스케줄러 실행기
+
+- 상태: 완료
+- 목표:
+  - 예약된 Course 자동 OPEN 유스케이스를 cron 기반으로 주기 실행
+  - ShedLock으로 다중 인스턴스 중복 실행 방지
+  - 자동 OPEN 대상 조회를 위한 복합 인덱스 추가
+- 진행 내역:
+  - CourseStatusScheduler 추가
+  - Spring scheduling 활성화
+  - 자동 OPEN 대상 조회 최적화 인덱스 추가
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.scheduler.CourseStatusSchedulerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 6-C1. 모집 마감 Course 자동 CLOSED 유스케이스
+
+- 상태: 완료
+- 목표:
+  - 모집 마감 시간이 지난 OPEN Course를 자동 CLOSED
+  - 자동 CLOSED 시 AUTO_CLOSED 상태 이력을 SYSTEM 변경 주체로 저장
+  - 아직 모집 중인 OPEN Course는 자동 CLOSED 대상에서 제외
+- 진행 내역:
+  - Course 자동 CLOSED 도메인 메서드 추가
+  - 자동 CLOSED 대상 조회 repository query 추가
+  - CourseService에 스케줄러가 호출할 closeExpiredOpenCourses use case 추가
+  - 테스트 워크플로우 보강: 자동 CLOSED 복수 대상 처리와 OPEN이 아닌 만료 Course 제외 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.global.config.DatabaseFoundationTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 6-C2. Course 상태 동기화 스케줄러 연결
+
+- 상태: 완료
+- 목표:
+  - 같은 cron job에서 예약 Course 자동 OPEN과 모집 마감 Course 자동 CLOSED를 함께 실행
+  - 자동 CLOSED 대상 조회를 위한 복합 인덱스 추가
+- 진행 내역:
+  - CourseStatusScheduler가 openReservedCourses와 closeExpiredOpenCourses를 함께 호출하도록 변경
+  - 자동 CLOSED 조회 최적화 인덱스 추가
+  - 테스트 워크플로우 보강: 상태 동기화 호출 순서, scheduler bean 조건, 자동 상태 동기화 인덱스 생성 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.scheduler.CourseStatusSchedulerTest` 통과
+  - `./gradlew test --tests com.lklass.global.config.DatabaseFoundationTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+  - `./gradlew test` 통과
 
 ## Slice 7. 수강 신청과 정원 확보
 

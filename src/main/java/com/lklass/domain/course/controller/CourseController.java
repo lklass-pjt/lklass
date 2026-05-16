@@ -84,4 +84,10 @@ public class CourseController {
         courseService.closeCourse(actor, courseId);
         return CommonResponse.success();
     }
+
+    @PostMapping("/{courseId}/publish-reservation")
+    public CommonResponse<Void> reserveCoursePublication(@PathVariable Long courseId) {
+        courseService.reserveCoursePublication(courseId);
+        return CommonResponse.success();
+    }
 }

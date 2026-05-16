@@ -244,6 +244,24 @@ class CourseEntityTest {
         assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN);
         assertThat(course.getEnrollmentPeriod().getStartAt()).isEqualTo(now);
         assertThat(course.getEnrollmentPeriod().getEndAt()).isEqualTo(manualEnrollmentEndAt);
+        assertThat(course.isAutoPublishEnabled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Course는 자동 게시 예약이 켜져 있어도 수동 OPEN이 성공하면 예약 플래그를 끈다")
+    void openManuallyClearsAutoPublishReservation() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        LocalDateTime manualEnrollmentEndAt = LocalDateTime.of(2026, 5, 30, 18, 0);
+        Course course = createCourse(1L);
+        course.reserveAutoPublish(now);
+
+        // when
+        course.openManually(now, manualEnrollmentEndAt);
+
+        // then
+        assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN);
+        assertThat(course.isAutoPublishEnabled()).isFalse();
     }
 
     @Test
@@ -260,6 +278,181 @@ class CourseEntityTest {
 
         // then
         assertThat(course.getStatus()).isEqualTo(CourseStatus.CLOSED);
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감 시각이 지나면 자동으로 CLOSED 상태가 될 수 있다")
+    void closeAutomatically() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        LocalDateTime manualEnrollmentEndAt = LocalDateTime.of(2026, 5, 30, 18, 0);
+        Course course = createCourse(1L);
+        course.openManually(now, manualEnrollmentEndAt);
+
+        // when
+        course.closeAutomatically(manualEnrollmentEndAt);
+
+        // then
+        assertThat(course.getStatus()).isEqualTo(CourseStatus.CLOSED);
+        assertThat(course.isAutoPublishEnabled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Course는 OPEN 상태가 아니면 자동 CLOSED로 변경할 수 없다")
+    void rejectAutomaticCloseForNonOpenCourse() {
+        // given
+        Course course = createCourse(1L);
+
+        // when & then
+        assertThatThrownBy(() -> course.closeAutomatically(ENROLLMENT_END_AT))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감 시각 전이면 자동 CLOSED로 변경할 수 없다")
+    void rejectAutomaticCloseBeforeEnrollmentEndAt() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        LocalDateTime manualEnrollmentEndAt = LocalDateTime.of(2026, 5, 30, 18, 0);
+        Course course = createCourse(1L);
+        course.openManually(now, manualEnrollmentEndAt);
+
+        // when & then
+        assertThatThrownBy(() -> course.closeAutomatically(manualEnrollmentEndAt.minusSeconds(1)))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 DRAFT 상태에서 자동 게시 예약을 켤 수 있다")
+    void reserveAutoPublish() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        Course course = createCourse(1L);
+
+        // when
+        course.reserveAutoPublish(now);
+
+        // then
+        assertThat(course.isAutoPublishEnabled()).isTrue();
+        assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+    }
+
+    @Test
+    @DisplayName("Course는 자동 OPEN 시 예약 게시 플래그를 끄고 OPEN 상태가 된다")
+    void openAutomatically() {
+        // given
+        LocalDateTime now = ENROLLMENT_START_AT;
+        Course course = createCourse(1L);
+        course.reserveAutoPublish(LocalDateTime.of(2026, 5, 16, 10, 0));
+
+        // when
+        course.openAutomatically(now);
+
+        // then
+        assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN);
+        assertThat(course.isAutoPublishEnabled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Course는 자동 게시 예약이 꺼져 있으면 자동 OPEN할 수 없다")
+    void rejectAutomaticOpenWithoutReservation() {
+        // given
+        Course course = createCourse(1L);
+
+        // when & then
+        assertThatThrownBy(() -> course.openAutomatically(ENROLLMENT_START_AT))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 시작 전이면 자동 OPEN할 수 없다")
+    void rejectAutomaticOpenBeforeEnrollmentStartAt() {
+        // given
+        Course course = createCourse(1L);
+        course.reserveAutoPublish(LocalDateTime.of(2026, 5, 16, 10, 0));
+
+        // when & then
+        assertThatThrownBy(() -> course.openAutomatically(ENROLLMENT_START_AT.minusSeconds(1)))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감 시각 이후면 자동 OPEN할 수 없다")
+    void rejectAutomaticOpenAfterEnrollmentEndAt() {
+        // given
+        Course course = createCourse(1L);
+        course.reserveAutoPublish(LocalDateTime.of(2026, 5, 16, 10, 0));
+
+        // when & then
+        assertThatThrownBy(() -> course.openAutomatically(ENROLLMENT_END_AT))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 DRAFT가 아니면 자동 게시 예약을 켤 수 없다")
+    void rejectAutoPublishReservationForNonDraftCourse() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        LocalDateTime manualEnrollmentEndAt = LocalDateTime.of(2026, 5, 30, 18, 0);
+        Course course = createCourse(1L);
+        course.openManually(now, manualEnrollmentEndAt);
+
+        // when & then
+        assertThatThrownBy(() -> course.reserveAutoPublish(now))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감이 지난 뒤에는 자동 게시 예약을 켤 수 없다")
+    void rejectAutoPublishReservationAfterEnrollmentClosed() {
+        // given
+        LocalDateTime now = ENROLLMENT_END_AT;
+        Course course = createCourse(1L);
+
+        // when & then
+        assertThatThrownBy(() -> course.reserveAutoPublish(now))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감일이 수강 시작일 이전이 아니면 자동 게시 예약을 켤 수 없다")
+    void rejectAutoPublishReservationWithEnrollmentEndAtAfterCourseStartAt() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        Course course = Course.create(
+                1L,
+                "스프링 입문",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000.00"),
+                30,
+                ENROLLMENT_START_AT,
+                COURSE_START_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+
+        // when & then
+        assertThatThrownBy(() -> course.reserveAutoPublish(now))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.INVALID_ENROLLMENT_PERIOD)
+                );
     }
 
     @Test

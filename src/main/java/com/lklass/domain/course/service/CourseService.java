@@ -19,6 +19,7 @@ import com.lklass.global.security.AuthenticatedUser;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -124,6 +125,52 @@ public class CourseService {
         );
     }
 
+    @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
+    @Transactional
+    public void reserveCoursePublication(Long courseId) {
+        Course course = getCourseEntity(courseId);
+
+        course.reserveAutoPublish(LocalDateTime.now(clock));
+    }
+
+    @Transactional
+    public int openReservedCourses() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        List<Course> courses = courseRepository.findAutoOpenTargets(now);
+
+        courses.forEach(course -> {
+            CourseStatus fromStatus = course.getStatus();
+            course.openAutomatically(now);
+            recordStatusHistory(
+                    course,
+                    fromStatus,
+                    course.getStatus(),
+                    CourseStatusChangeReason.AUTO_OPENED,
+                    null
+            );
+        });
+        return courses.size();
+    }
+
+    @Transactional
+    public int closeExpiredOpenCourses() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        List<Course> courses = courseRepository.findAutoCloseTargets(now);
+
+        courses.forEach(course -> {
+            CourseStatus fromStatus = course.getStatus();
+            course.closeAutomatically(now);
+            recordStatusHistory(
+                    course,
+                    fromStatus,
+                    course.getStatus(),
+                    CourseStatusChangeReason.AUTO_CLOSED,
+                    null
+            );
+        });
+        return courses.size();
+    }
+
     private Long resolveCreatorId(AuthenticatedUser actor, Long requestedCreatorId) {
         if (actor.role() == UserRole.ADMIN) {
             return requestedCreatorId;
@@ -149,7 +196,7 @@ public class CourseService {
                 toStatus,
                 reason,
                 LocalDateTime.now(clock),
-                CourseStatusChangedBy.user(actorId)
+                actorId == null ? CourseStatusChangedBy.system() : CourseStatusChangedBy.user(actorId)
         ));
     }
 }
