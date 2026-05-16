@@ -479,7 +479,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 7
-- 상태: 대기
+- 상태: 완료
 - 실행/검증 가능 항목:
   - `PENDING -> CONFIRMED` 성공
   - 잘못된 결제 확정 실패
@@ -493,11 +493,67 @@ workflow: implement
   - cancel reason
   - Clock 기반 취소 기한 테스트
 
+### Slice 8-A. 결제 확정 use case
+
+- 상태: 완료
+- 목표:
+  - 외부 결제 연동 없이 신청 상태를 `PENDING -> CONFIRMED`로 확정
+  - 결제 확정 시각과 상태 이력을 저장
+- 완료 내역:
+  - Enrollment `confirm` 도메인 메서드 추가
+  - EnrollmentService `confirmPayment` use case 추가
+  - 결제 확정 요청자를 `AuthenticatedUser`로 받고 신청 소유자 검증 추가
+  - 결제 확정 이력의 changedBy를 실제 요청자인 STUDENT로 기록
+  - EnrollmentErrorCode에 신청 없음/잘못된 상태 오류 추가
+- 현재 검증 가능 항목:
+  - Enrollment `confirm` 도메인 메서드의 `PENDING -> CONFIRMED` 성공
+  - Enrollment `confirm` 실패 시 상태 변경 방지
+  - PENDING 신청 결제 확정 성공
+  - CONFIRMED 상태와 `confirmedAt` 저장
+  - ActiveEnrollment와 Course 좌석 점유 유지
+  - PAYMENT_CONFIRMED 상태 이력 저장
+  - 다른 사용자의 신청 결제 확정 실패
+  - 존재하지 않는 신청 결제 확정 실패
+  - 이미 CONFIRMED인 신청 재확정 실패
+- 검증:
+  - 테스트 워크플로우 보강: Enrollment `confirm` 도메인 메서드 성공/실패 규칙 테스트 추가
+  - `./gradlew test --tests com.lklass.domain.enrollment.entity.EnrollmentEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.enrollment.service.EnrollmentServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 8-B. 수강 취소 use case와 결제/취소 API
+
+- 상태: 완료
+- 목표:
+  - PENDING/CONFIRMED 신청을 `CANCELLED`로 취소
+  - CONFIRMED 신청은 결제 확정 후 7일 이내에만 취소 가능
+  - 취소 성공 시 좌석 점유와 활성 신청을 함께 해제
+  - 결제 확정/수강 취소 API 응답 계약 고정
+- 완료 내역:
+  - Enrollment `cancel` 도메인 메서드 추가
+  - EnrollmentService `cancel` use case 추가
+  - ActiveEnrollment 삭제 repository 메서드 추가
+  - `POST /api/enrollments/{enrollmentId}/confirm-payment` API 추가
+  - `POST /api/enrollments/{enrollmentId}/cancel` API 추가
+  - 취소 가능 기간 만료 오류 추가
+- 현재 검증 가능 항목:
+  - PENDING 신청 취소 성공
+  - CONFIRMED 신청 결제 후 7일 이내 취소 성공
+  - CONFIRMED 신청 결제 후 7일 초과 취소 실패
+  - 취소 성공 시 ActiveEnrollment 삭제와 Course 좌석 release
+  - 다른 사용자의 신청 취소 실패
+  - 이미 CANCELLED 상태인 신청 재취소 실패
+  - 결제 확정 API 성공/실패 응답
+  - 수강 취소 API 성공/실패 응답
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.enrollment.entity.EnrollmentEntityTest --tests com.lklass.domain.enrollment.service.EnrollmentServiceTest --tests com.lklass.domain.enrollment.controller.EnrollmentControllerTest` 통과
+
 ## Slice 9. PENDING 신청 만료
 
 - 유형: AFK
 - 선행 조건: Slice 8
-- 상태: 대기
+- 상태: 완료
 - 실행/검증 가능 항목:
   - 30분 초과 PENDING이 CANCELLED로 변경
   - 만료된 PENDING은 결제 확정 불가
@@ -508,12 +564,18 @@ workflow: implement
   - ShedLock
   - 만료 대상 조회 repository query
   - 상태 이력
+- 완료 내역:
+  - Enrollment `expire` 도메인 메서드 추가
+  - EnrollmentService `expirePendingPayments` use case 추가
+  - PENDING 만료 대상 조회 repository query 추가
+  - EnrollmentExpirationScheduler 추가
+  - 목록/만료 조회 인덱스 migration 추가
 
 ## Slice 10. 목록, 수강생 조회, 페이지네이션
 
 - 유형: AFK
 - 선행 조건: Slice 8
-- 상태: 대기
+- 상태: 완료
 - 실행/검증 가능 항목:
   - 내 수강 신청 목록 페이지 조회
   - Course 수강생 목록 페이지 조회
@@ -525,12 +587,18 @@ workflow: implement
   - page response
   - enrollment list DTO
   - course students DTO
+- 완료 내역:
+  - `GET /api/me/enrollments` API 추가
+  - `GET /api/courses/{courseId}/students` API 추가
+  - EnrollmentQueryResult projection DTO 추가
+  - PageResponse 기반 1-base 페이지 응답 적용
+  - Course 수강생 목록은 CoursePermission 기반 관리 권한으로 보호
 
 ## Slice 11. 동시성 테스트와 README 마무리
 
 - 유형: HITL
 - 선행 조건: Slice 7, Slice 10
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - 정원 5명 Course에 100건 virtual-thread 신청 시도 시 정원 초과 없음
   - 최종 `occupiedCount`와 활성 신청 수 일치
@@ -542,3 +610,8 @@ workflow: implement
   - API 예시
   - ERD/데이터 모델 설명
   - AI 활용 내역
+- 완료 내역:
+  - 정원 5명 Course에 100건 virtual-thread 동시 신청 통합 테스트 추가
+  - README는 사용자 별도 작업으로 남김
+- 검증:
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*' --tests com.lklass.global.config.DatabaseFoundationTest` 통과

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.lklass.TestcontainersConfiguration;
 import com.lklass.domain.course.scheduler.CourseStatusScheduler;
+import com.lklass.domain.enrollment.scheduler.EnrollmentExpirationScheduler;
 import com.lklass.global.config.properties.EnrollmentPolicyProperties;
 import com.lklass.global.config.properties.JwtProperties;
 import com.lklass.global.config.properties.SchedulerProperties;
@@ -106,6 +107,7 @@ class DatabaseFoundationTest {
         // then
         assertThat(schedulingEnabled).isFalse();
         assertThat(applicationContext.getBeansOfType(CourseStatusScheduler.class)).isEmpty();
+        assertThat(applicationContext.getBeansOfType(EnrollmentExpirationScheduler.class)).isEmpty();
     }
 
     @Test
@@ -125,6 +127,34 @@ class DatabaseFoundationTest {
                               from information_schema.statistics
                              where table_schema = database()
                                and table_name = 'courses'
+                               and index_name = ?
+                            """,
+                    Integer.class,
+                    indexName
+            );
+
+            assertThat(indexCount).isGreaterThan(0);
+        });
+    }
+
+    @Test
+    @DisplayName("Flyway는 Enrollment 목록 조회와 PENDING 만료 대상 조회 인덱스를 생성한다")
+    void createEnrollmentQueryIndexes() {
+        // given
+        List<String> indexNames = List.of(
+                "idx_enrollments_user_created_at",
+                "idx_enrollments_course_created_at",
+                "idx_enrollments_pending_expiration"
+        );
+
+        // when & then
+        indexNames.forEach(indexName -> {
+            Integer indexCount = jdbcTemplate.queryForObject(
+                    """
+                            select count(*)
+                              from information_schema.statistics
+                             where table_schema = database()
+                               and table_name = 'enrollments'
                                and index_name = ?
                             """,
                     Integer.class,

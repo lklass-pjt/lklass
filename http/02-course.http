@@ -1,0 +1,58 @@
+@baseUrl = http://localhost:8080
+
+### 2-1. 시나리오 준비: CREATOR 회원가입
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "course-creator-{{$uuid}}@example.com",
+  "password": "password123",
+  "name": "Course Creator",
+  "role": "CREATOR"
+}
+
+> {%
+    client.global.set("courseCreatorToken", response.body.data.accessToken);
+%}
+
+### 2-2. Course 생성: 생성 직후 DRAFT
+POST {{baseUrl}}/api/courses
+Authorization: Bearer {{courseCreatorToken}}
+Content-Type: application/json
+
+{
+  "title": "Course 상태 전이 시나리오 {{$timestamp}}",
+  "description": "DRAFT에서 OPEN, CLOSED로 전이되는 흐름을 확인합니다.",
+  "price": 10000.00,
+  "capacity": 5,
+  "enrollmentStartAt": "2030-06-01T10:00:00",
+  "enrollmentEndAt": "2030-06-10T18:00:00",
+  "courseStartAt": "2030-06-15T10:00:00",
+  "courseEndAt": "2030-07-15T18:00:00"
+}
+
+> {%
+    client.global.set("courseScenarioCourseId", response.body.data.id);
+%}
+
+### 2-3. Course 수동 OPEN: 모집 시작은 현재 시각, 모집 마감은 요청값
+PATCH {{baseUrl}}/api/courses/{{courseScenarioCourseId}}/open
+Authorization: Bearer {{courseCreatorToken}}
+Content-Type: application/json
+
+{
+  "enrollmentEndAt": "2030-06-10T18:00:00"
+}
+
+### 2-4. OPEN Course 상세 조회: occupiedCount 확인
+GET {{baseUrl}}/api/courses/{{courseScenarioCourseId}}
+
+### 2-5. Course 목록 조회: 상태 필터 OPEN
+GET {{baseUrl}}/api/courses?status=OPEN&page=1&size=10
+
+### 2-6. Course 수동 CLOSED
+PATCH {{baseUrl}}/api/courses/{{courseScenarioCourseId}}/close
+Authorization: Bearer {{courseCreatorToken}}
+
+### 2-7. CLOSED Course 상세 조회
+GET {{baseUrl}}/api/courses/{{courseScenarioCourseId}}

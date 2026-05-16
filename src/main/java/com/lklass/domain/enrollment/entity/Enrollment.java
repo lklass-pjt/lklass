@@ -1,6 +1,8 @@
 package com.lklass.domain.enrollment.entity;
 
+import com.lklass.domain.enrollment.exception.EnrollmentErrorCode;
 import com.lklass.global.entity.BaseTimeEntity;
+import com.lklass.global.exception.BusinessException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -9,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import lombok.AccessLevel;
@@ -53,5 +56,45 @@ public class Enrollment extends BaseTimeEntity {
 
     public static Enrollment create(Long courseId, Long userId, LocalDateTime enrolledAt) {
         return new Enrollment(courseId, userId, enrolledAt);
+    }
+
+    public void confirm(LocalDateTime confirmedAt) {
+        Objects.requireNonNull(confirmedAt, "confirmedAt must not be null");
+        if (status != EnrollmentStatus.PENDING) {
+            throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
+        }
+        this.status = EnrollmentStatus.CONFIRMED;
+        this.confirmedAt = confirmedAt;
+    }
+
+    public void cancel(LocalDateTime cancelledAt, Duration cancellationPeriod) {
+        LocalDateTime checkedCancelledAt = Objects.requireNonNull(cancelledAt, "cancelledAt must not be null");
+        Duration checkedCancellationPeriod = Objects.requireNonNull(cancellationPeriod, "cancellationPeriod must not be null");
+
+        if (status == EnrollmentStatus.PENDING) {
+            cancelAt(checkedCancelledAt);
+            return;
+        }
+        if (status == EnrollmentStatus.CONFIRMED) {
+            if (checkedCancelledAt.isAfter(confirmedAt.plus(checkedCancellationPeriod))) {
+                throw new BusinessException(EnrollmentErrorCode.CANCELLATION_PERIOD_EXPIRED);
+            }
+            cancelAt(checkedCancelledAt);
+            return;
+        }
+        throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
+    }
+
+    public void expire(LocalDateTime expiredAt) {
+        Objects.requireNonNull(expiredAt, "expiredAt must not be null");
+        if (status != EnrollmentStatus.PENDING) {
+            throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
+        }
+        cancelAt(expiredAt);
+    }
+
+    private void cancelAt(LocalDateTime cancelledAt) {
+        this.status = EnrollmentStatus.CANCELLED;
+        this.cancelledAt = cancelledAt;
     }
 }

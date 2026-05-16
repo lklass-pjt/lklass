@@ -1,14 +1,18 @@
 package com.lklass.domain.enrollment.repository;
 
+import com.lklass.domain.enrollment.dto.EnrollmentQueryResult;
 import com.lklass.domain.enrollment.entity.ActiveEnrollment;
 import com.lklass.domain.enrollment.entity.Enrollment;
 import com.lklass.domain.enrollment.entity.EnrollmentStatusHistory;
 import com.lklass.domain.enrollment.exception.EnrollmentErrorCode;
 import com.lklass.global.exception.BusinessException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -46,8 +50,24 @@ public class EnrollmentRepository {
         return enrollmentJpaRepository.findById(enrollmentId);
     }
 
+    public Page<EnrollmentQueryResult> findMyEnrollments(Long userId, Pageable pageable) {
+        return enrollmentJpaRepository.findMyEnrollments(userId, pageable);
+    }
+
+    public Page<EnrollmentQueryResult> findCourseStudents(Long courseId, Pageable pageable) {
+        return enrollmentJpaRepository.findCourseStudents(courseId, pageable);
+    }
+
+    public List<Enrollment> findPendingPaymentExpirationTargets(LocalDateTime expiredBefore) {
+        return enrollmentJpaRepository.findPendingPaymentExpirationTargets(expiredBefore);
+    }
+
     public boolean existsActiveEnrollment(Long courseId, Long userId) {
         return activeEnrollmentJpaRepository.existsByCourseIdAndUserId(courseId, userId);
+    }
+
+    public boolean deleteActiveEnrollment(Long enrollmentId) {
+        return activeEnrollmentJpaRepository.deleteByEnrollment_Id(enrollmentId) == 1;
     }
 
     public List<EnrollmentStatusHistory> findStatusHistories(Long enrollmentId) {
