@@ -22,11 +22,11 @@ public class CourseStatusScheduler {
     public void synchronizeCourseStatuses() {
         int openedCount = courseService.openReservedCourses();
         if (openedCount > 0) {
-            AppLog.info(log, "COURSE_AUTO_OPENED", "count=" + openedCount);
+            AppLog.info(log, "COURSE_AUTO_OPENED", "count={}", openedCount);
         }
         int closedCount = courseService.closeExpiredOpenCourses();
         if (closedCount > 0) {
-            AppLog.info(log, "COURSE_AUTO_CLOSED", "count=" + closedCount);
+            AppLog.info(log, "COURSE_AUTO_CLOSED", "count={}", closedCount);
         }
     }
 }

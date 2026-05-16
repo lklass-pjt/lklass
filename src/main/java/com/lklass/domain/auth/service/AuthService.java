@@ -7,8 +7,11 @@ import com.lklass.domain.user.entity.UserRole;
 import com.lklass.domain.user.exception.UserErrorCode;
 import com.lklass.domain.user.repository.UserRepository;
 import com.lklass.global.exception.BusinessException;
+import com.lklass.global.logging.AppLog;
 import com.lklass.global.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -32,6 +37,7 @@ public class AuthService {
         User user = User.create(email, passwordHash, name, role);
         User savedUser = userRepository.save(user);
 
+        AppLog.info(log, "USER_SIGNUP_PROCESSED", "userId={}, role={}", savedUser.getId(), savedUser.getRole());
         return issueAccessToken(savedUser);
     }
 
@@ -44,6 +50,7 @@ public class AuthService {
             throw new BusinessException(AuthErrorCode.INVALID_CREDENTIALS);
         }
 
+        AppLog.info(log, "USER_LOGIN_PROCESSED", "userId={}, role={}", user.getId(), user.getRole());
         return issueAccessToken(user);
     }
 

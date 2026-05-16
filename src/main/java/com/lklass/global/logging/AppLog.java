@@ -27,15 +27,26 @@ public final class AppLog {
         log.error("[Unhandled Exception] code={}", errorCode.code(), exception);
     }
 
-    public static void info(Logger log, String eventCode, String message) {
-        log.info("[{}] {}", eventCode, message);
+    public static void debug(Logger log, String eventCode, String message, Object... args) {
+        log.debug("[{}] " + message, prependEventCode(eventCode, args));
     }
 
-    public static void warn(Logger log, String eventCode, String message) {
-        log.warn("[{}] {}", eventCode, message);
+    public static void info(Logger log, String eventCode, String message, Object... args) {
+        log.info("[{}] " + message, prependEventCode(eventCode, args));
+    }
+
+    public static void warn(Logger log, String eventCode, String message, Object... args) {
+        log.warn("[{}] " + message, prependEventCode(eventCode, args));
     }
 
     public static void error(Logger log, String eventCode, String message, Throwable throwable) {
         log.error("[{}] {}", eventCode, message, throwable);
+    }
+
+    private static Object[] prependEventCode(String eventCode, Object[] args) {
+        Object[] arguments = new Object[args.length + 1];
+        arguments[0] = eventCode;
+        System.arraycopy(args, 0, arguments, 1, args.length);
+        return arguments;
     }
 }

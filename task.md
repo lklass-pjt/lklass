@@ -24,22 +24,26 @@ workflow: implement
 - 테스트 워크플로우 검증:
   - `GlobalExceptionHandlerTest`: 비즈니스 예외, 예상 못한 예외, validation 실패 응답 검증
   - `TraceIdFilterTest`: 요청 traceId 사용, traceId 자동 생성, 예외 발생 시 MDC 정리 검증
-  - `DomainEventTest`: 이벤트 타입과 payload 보존 검증
+  - `AppLogTest`: 공통 로그 포맷, placeholder 치환, level, throwable 보존 검증
+  - `RequestLoggingFilterTest`: HTTP 요청 성공/실패 로그 대표 흐름 검증
   - 검증 명령: `./gradlew test --tests 'com.lklass.global.*' --tests com.lklass.LklassApplicationTests` 통과
 - 실행/검증 가능 항목:
   - 공통 응답 테스트
   - 에러 코드/예외 핸들러 테스트
+  - 공통 AppLog 포맷 테스트
   - traceId 필터 테스트
+  - HTTP request logging 필터 테스트
   - Clock/configuration properties context 테스트
 - 범위:
   - `CommonResponse`
   - `ErrorCode`
   - `BusinessException`
   - `GlobalExceptionHandler`
+  - `AppLog`
   - `TraceIdFilter`
+  - `RequestLoggingFilter`
   - `ClockConfig`
   - 기본 configuration properties
-  - 기본 이벤트 모델
   - logback 패턴
 
 ## Slice 3. 설정과 DB 기반

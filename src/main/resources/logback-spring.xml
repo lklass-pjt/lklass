@@ -9,7 +9,30 @@
         </encoder>
     </appender>
 
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
+    <springProfile name="local">
+        <logger name="com.lklass" level="DEBUG"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="test">
+        <logger name="com.lklass" level="INFO"/>
+        <root level="WARN">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <logger name="com.lklass" level="INFO"/>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="!local &amp; !test &amp; !prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
 </configuration>
