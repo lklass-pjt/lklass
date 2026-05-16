@@ -6,16 +6,19 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.lklass.domain.course.dto.CourseCreateRequest;
 import com.lklass.domain.course.dto.CourseCreateResult;
+import com.lklass.domain.course.dto.CourseOpenRequest;
 import com.lklass.domain.course.dto.CourseQueryResult;
 import com.lklass.domain.course.entity.CourseStatus;
 import com.lklass.domain.course.exception.CourseErrorCode;
@@ -66,6 +69,7 @@ class CourseControllerTest {
 
     private static final LocalDateTime ENROLLMENT_START_AT = LocalDateTime.of(2026, 5, 20, 10, 0);
     private static final LocalDateTime ENROLLMENT_END_AT = LocalDateTime.of(2026, 5, 27, 18, 0);
+    private static final LocalDateTime MANUAL_ENROLLMENT_END_AT = LocalDateTime.of(2026, 5, 30, 18, 0);
     private static final LocalDateTime COURSE_START_AT = LocalDateTime.of(2026, 6, 1, 9, 0);
     private static final LocalDateTime COURSE_END_AT = LocalDateTime.of(2026, 6, 30, 18, 0);
 
@@ -316,6 +320,153 @@ class CourseControllerTest {
                 .andExpect(jsonPath("$.code").value(CourseErrorCode.COURSE_NOT_FOUND.code()));
     }
 
+    @Test
+    @DisplayName("Course OPEN API는 요청한 모집 마감일로 수동 모집 시작에 성공하면 성공 응답을 반환한다")
+    void openCourse() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+        CourseOpenRequest request = openRequest(MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/open")
+                        .header("Authorization", "Bearer creator-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        verify(courseService).openCourse(
+                any(AuthenticatedUser.class),
+                eq(100L),
+                eq(MANUAL_ENROLLMENT_END_AT)
+        );
+    }
+
+    @Test
+    @DisplayName("Course CLOSE API는 수동 모집 마감에 성공하면 성공 응답을 반환한다")
+    void closeCourse() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/close")
+                        .header("Authorization", "Bearer creator-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        verify(courseService).closeCourse(any(AuthenticatedUser.class), eq(100L));
+    }
+
+    @Test
+    @DisplayName("Course OPEN API는 인증이 없으면 401 공통 실패 응답을 반환한다")
+    void rejectUnauthenticatedCourseOpen() throws Exception {
+        // given
+        CourseOpenRequest request = openRequest(MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/open")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.UNAUTHORIZED.code()));
+        verify(courseService, never()).openCourse(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Course OPEN API는 권한이 없으면 403 공통 실패 응답을 반환한다")
+    void rejectForbiddenCourseOpen() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+        doThrow(new AccessDeniedException("Access Denied"))
+                .when(courseService)
+                .openCourse(any(AuthenticatedUser.class), eq(100L), any(LocalDateTime.class));
+        CourseOpenRequest request = openRequest(MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/open")
+                        .header("Authorization", "Bearer student-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.FORBIDDEN.code()));
+    }
+
+    @Test
+    @DisplayName("Course OPEN API는 ADMIN이 요청한 Course가 없으면 404 공통 실패 응답을 반환한다")
+    void rejectUnknownCourseOpenByAdmin() throws Exception {
+        // given
+        mockToken("admin-token", 99L, UserRole.ADMIN);
+        doThrow(new BusinessException(CourseErrorCode.COURSE_NOT_FOUND))
+                .when(courseService)
+                .openCourse(any(AuthenticatedUser.class), eq(999_999L), any(LocalDateTime.class));
+        CourseOpenRequest request = openRequest(MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/999999/open")
+                        .header("Authorization", "Bearer admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CourseErrorCode.COURSE_NOT_FOUND.code()));
+    }
+
+    @Test
+    @DisplayName("Course OPEN API는 잘못된 상태 전이면 400 공통 실패 응답을 반환한다")
+    void rejectInvalidCourseStatusTransitionOnOpen() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+        doThrow(new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION))
+                .when(courseService)
+                .openCourse(any(AuthenticatedUser.class), eq(100L), any(LocalDateTime.class));
+        CourseOpenRequest request = openRequest(MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/open")
+                        .header("Authorization", "Bearer creator-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION.code()));
+    }
+
+    @Test
+    @DisplayName("Course OPEN API는 모집 마감일이 없으면 400 validation 응답을 반환한다")
+    void rejectInvalidCourseOpenRequest() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+        CourseOpenRequest request = openRequest(null);
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/open")
+                        .header("Authorization", "Bearer creator-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.VALIDATION_ERROR.code()))
+                .andExpect(jsonPath("$.message").value("enrollmentEndAt: enrollmentEndAt은 필수입니다."));
+        verify(courseService, never()).openCourse(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Course CLOSE API는 잘못된 상태 전이면 400 공통 실패 응답을 반환한다")
+    void rejectInvalidCourseStatusTransitionOnClose() throws Exception {
+        // given
+        mockToken("creator-token", 1L, UserRole.CREATOR);
+        doThrow(new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION))
+                .when(courseService)
+                .closeCourse(any(AuthenticatedUser.class), eq(100L));
+
+        // when & then
+        mockMvc.perform(patch("/api/courses/100/close")
+                        .header("Authorization", "Bearer creator-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION.code()));
+    }
+
     private void mockToken(String token, Long userId, UserRole role) {
         when(jwtTokenProvider.getUserId(token)).thenReturn(userId);
         when(jwtTokenProvider.getRole(token)).thenReturn(role);
@@ -356,6 +507,10 @@ class CourseControllerTest {
                 COURSE_START_AT,
                 COURSE_END_AT
         );
+    }
+
+    private CourseOpenRequest openRequest(LocalDateTime enrollmentEndAt) {
+        return new CourseOpenRequest(enrollmentEndAt);
     }
 
     private CourseCreateRequest request(Long creatorId, String title) {

@@ -5,7 +5,18 @@ import org.springframework.http.HttpStatus;
 
 public enum CourseErrorCode implements ErrorCode {
 
-    COURSE_NOT_FOUND(HttpStatus.NOT_FOUND, "COURSE_NOT_FOUND", "Course was not found.");
+    COURSE_NOT_FOUND(HttpStatus.NOT_FOUND, "COURSE_NOT_FOUND", "Course was not found."),
+    ENROLLMENT_CLOSED(HttpStatus.BAD_REQUEST, "ENROLLMENT_CLOSED", "Course enrollment has already closed."),
+    INVALID_ENROLLMENT_PERIOD(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_ENROLLMENT_PERIOD",
+            "Course enrollment period is invalid."
+    ),
+    INVALID_COURSE_STATUS_TRANSITION(
+            HttpStatus.BAD_REQUEST,
+            "INVALID_COURSE_STATUS_TRANSITION",
+            "Course status transition is invalid."
+    );
 
     private final HttpStatus httpStatus;
     private final String code;

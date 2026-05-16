@@ -30,4 +30,8 @@ public class CourseRepository {
     public Optional<CourseQueryResult> findResultById(Long courseId) {
         return courseJpaRepository.findCourseResultById(courseId);
     }
+
+    public boolean existsByIdAndCreatorId(Long courseId, Long creatorId) {
+        return courseJpaRepository.existsByIdAndCreatorId(courseId, creatorId);
+    }
 }

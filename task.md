@@ -213,12 +213,36 @@ workflow: implement
 
 ### Slice 5-D. Course 상태 전이와 이력
 
-- 상태: 대기
+- 상태: 완료
 - 목표:
   - `DRAFT -> OPEN` 성공
   - `OPEN -> CLOSED` 성공
   - `DRAFT -> CLOSED`, `CLOSED -> OPEN` 같은 잘못된 전이 실패
   - 상태 변경 이력이 같은 트랜잭션에서 저장됨
+- 진행 내역:
+  - Slice 5-D1 완료: Course.open(), Course.close() 도메인 상태 전이 메서드 추가
+  - Slice 5-D1 완료: Course 수동 OPEN/CLOSED service use case 추가
+  - Slice 5-D1 완료: 잘못된 상태 전이 시 `INVALID_COURSE_STATUS_TRANSITION` 예외 처리
+  - Slice 5-D1 완료: 수동 상태 변경 이력을 같은 트랜잭션에서 저장
+  - Slice 5-D1 완료: ADMIN은 모든 Course, CREATOR는 본인 Course만 상태 변경 가능하도록 검증
+  - Slice 5-D1 보강: Course 상태 변경 권한을 `@PreAuthorize`와 CoursePermission으로 통일
+  - Slice 5-D1 보강: CREATOR 소유 Course 확인은 `existsByIdAndCreatorId`로 가볍게 검증
+  - Slice 5-D1 보강: 수동 OPEN은 요청한 모집 마감일을 받고 모집 시작일을 현재 시각으로 변경
+  - Slice 5-D1 보강: 수동 OPEN 모집 마감일이 현재 시각 이후가 아니면 `ENROLLMENT_CLOSED` 예외 처리
+  - Slice 5-D1 보강: 수동 OPEN 모집 마감일이 수강 시작일 이전이 아니면 `INVALID_ENROLLMENT_PERIOD` 예외 처리
+  - 테스트 워크플로우 보강: Course entity 상태 전이 성공/실패 규칙을 단위 테스트로 고정
+  - 테스트 워크플로우 보강: Course 관리 권한의 인증 없음/principal 타입 불일치 경계 테스트 추가
+  - Slice 5-D2 완료: Course 수동 OPEN/CLOSE API 추가
+  - Slice 5-D2 완료: OPEN API는 요청 body로 모집 마감일을 받도록 구현
+  - Slice 5-D2 완료: 상태 전이 API의 성공, 401, 403, 404, 잘못된 상태 전이, validation 실패 계약 검증
+  - 테스트 워크플로우 보강: 상태 변경 API 404 계약은 ADMIN 기준으로 검증하고 CREATOR의 없는 Course 변경은 403으로 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.security.CoursePermissionTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
 - 범위:
   - Course.open()
   - Course.close()

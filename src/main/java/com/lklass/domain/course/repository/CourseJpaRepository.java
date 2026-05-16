@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface CourseJpaRepository extends JpaRepository<Course, Long> {
 
+    // 목록/상세 화면에는 creator 이름만 필요하므로 Course-User 연관관계 대신 조회 전용 projection으로 조합한다.
     @Query(
             value = """
                     select new com.lklass.domain.course.dto.CourseQueryResult(
@@ -65,4 +66,6 @@ public interface CourseJpaRepository extends JpaRepository<Course, Long> {
              where c.id = :courseId
             """)
     Optional<CourseQueryResult> findCourseResultById(@Param("courseId") Long courseId);
+
+    boolean existsByIdAndCreatorId(Long id, Long creatorId);
 }

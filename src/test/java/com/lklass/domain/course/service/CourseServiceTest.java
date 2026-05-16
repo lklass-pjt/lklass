@@ -48,6 +48,7 @@ class CourseServiceTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 5, 16, 10, 0);
     private static final LocalDateTime ENROLLMENT_START_AT = LocalDateTime.of(2026, 5, 20, 10, 0);
     private static final LocalDateTime ENROLLMENT_END_AT = LocalDateTime.of(2026, 5, 27, 18, 0);
+    private static final LocalDateTime MANUAL_ENROLLMENT_END_AT = LocalDateTime.of(2026, 5, 30, 18, 0);
     private static final LocalDateTime COURSE_START_AT = LocalDateTime.of(2026, 6, 1, 9, 0);
     private static final LocalDateTime COURSE_END_AT = LocalDateTime.of(2026, 6, 30, 18, 0);
 
@@ -364,6 +365,239 @@ class CourseServiceTest {
 
         // when & then
         assertThatThrownBy(() -> courseService.getCourse(unknownCourseId))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.COURSE_NOT_FOUND)
+                );
+    }
+
+    @Test
+    @DisplayName("CREATOR는 본인 Course를 지금부터 요청한 마감일까지 모집하도록 OPEN하고 MANUAL_OPENED 이력을 저장한다")
+    void openCourseByCreator() {
+        // given
+        User creator = userRepository.save(User.create(
+                "open-creator@example.com",
+                "encoded-password",
+                "오픈 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "오픈 대상 강의");
+
+        // when
+        courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN);
+                    assertThat(course.getEnrollmentPeriod().getStartAt()).isEqualTo(NOW);
+                    assertThat(course.getEnrollmentPeriod().getEndAt()).isEqualTo(MANUAL_ENROLLMENT_END_AT);
+                });
+        assertThat(courseStatusHistoryRepository.findAllByCourseId(createdCourse.id()))
+                .filteredOn(history -> history.getReason() == CourseStatusChangeReason.MANUAL_OPENED)
+                .singleElement()
+                .satisfies(history -> {
+                    assertThat(history.getFromStatus()).isEqualTo(CourseStatus.DRAFT);
+                    assertThat(history.getToStatus()).isEqualTo(CourseStatus.OPEN);
+                    assertThat(history.getChangedAt()).isEqualTo(NOW);
+                    assertThat(history.getChangedBy()).isEqualTo(CourseStatusChangedBy.user(creator.getId()));
+                });
+    }
+
+    @Test
+    @DisplayName("ADMIN은 다른 CREATOR의 Course를 DRAFT에서 OPEN으로 변경하고 changedBy를 ADMIN으로 저장한다")
+    void openCourseByAdmin() {
+        // given
+        User admin = userRepository.save(User.create(
+                "open-admin@example.com",
+                "encoded-password",
+                "오픈 관리자",
+                UserRole.ADMIN
+        ));
+        User creator = userRepository.save(User.create(
+                "admin-open-target@example.com",
+                "encoded-password",
+                "관리 대상 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser adminActor = authenticate(admin.getId(), UserRole.ADMIN);
+        CourseCreateResult createdCourse = createCourse(adminActor, creator.getId(), "관리자 오픈 대상 강의");
+
+        // when
+        courseService.openCourse(adminActor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.OPEN));
+        assertThat(courseStatusHistoryRepository.findAllByCourseId(createdCourse.id()))
+                .filteredOn(history -> history.getReason() == CourseStatusChangeReason.MANUAL_OPENED)
+                .singleElement()
+                .satisfies(history ->
+                        assertThat(history.getChangedBy()).isEqualTo(CourseStatusChangedBy.user(admin.getId()))
+                );
+    }
+
+    @Test
+    @DisplayName("CREATOR는 본인 Course를 OPEN에서 CLOSED로 변경하고 MANUAL_CLOSED 이력을 저장한다")
+    void closeCourseByCreator() {
+        // given
+        User creator = userRepository.save(User.create(
+                "close-creator@example.com",
+                "encoded-password",
+                "마감 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "마감 대상 강의");
+        courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+
+        // when
+        courseService.closeCourse(actor, createdCourse.id());
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> assertThat(course.getStatus()).isEqualTo(CourseStatus.CLOSED));
+        assertThat(courseStatusHistoryRepository.findAllByCourseId(createdCourse.id()))
+                .filteredOn(history -> history.getReason() == CourseStatusChangeReason.MANUAL_CLOSED)
+                .singleElement()
+                .satisfies(history -> {
+                    assertThat(history.getFromStatus()).isEqualTo(CourseStatus.OPEN);
+                    assertThat(history.getToStatus()).isEqualTo(CourseStatus.CLOSED);
+                    assertThat(history.getChangedAt()).isEqualTo(NOW);
+                    assertThat(history.getChangedBy()).isEqualTo(CourseStatusChangedBy.user(creator.getId()));
+                });
+    }
+
+    @Test
+    @DisplayName("DRAFT Course를 바로 CLOSED로 변경하면 INVALID_COURSE_STATUS_TRANSITION 예외가 발생한다")
+    void rejectCloseDraftCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "close-draft-creator@example.com",
+                "encoded-password",
+                "초안 마감 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "초안 마감 실패 강의");
+
+        // when & then
+        assertThatThrownBy(() -> courseService.closeCourse(actor, createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("CLOSED Course를 다시 OPEN으로 변경하면 INVALID_COURSE_STATUS_TRANSITION 예외가 발생한다")
+    void rejectReopenClosedCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reopen-closed-creator@example.com",
+                "encoded-password",
+                "재오픈 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "재오픈 실패 강의");
+        courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+        courseService.closeCourse(actor, createdCourse.id());
+
+        // when & then
+        assertThatThrownBy(() -> courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("수동 OPEN 모집 마감일이 현재 시각 이후가 아니면 ENROLLMENT_CLOSED 예외가 발생한다")
+    void rejectManualOpenWithPastEnrollmentEndAt() {
+        // given
+        User creator = userRepository.save(User.create(
+                "past-open-creator@example.com",
+                "encoded-password",
+                "과거 마감 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "과거 마감 오픈 실패 강의");
+
+        // when & then
+        assertThatThrownBy(() -> courseService.openCourse(actor, createdCourse.id(), NOW))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("수동 OPEN 모집 마감일이 수강 시작일 이전이 아니면 INVALID_ENROLLMENT_PERIOD 예외가 발생한다")
+    void rejectManualOpenWithEnrollmentEndAtAfterCourseStartAt() {
+        // given
+        User creator = userRepository.save(User.create(
+                "invalid-period-open-creator@example.com",
+                "encoded-password",
+                "기간 오류 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "기간 오류 오픈 실패 강의");
+
+        // when & then
+        assertThatThrownBy(() -> courseService.openCourse(actor, createdCourse.id(), COURSE_START_AT))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.INVALID_ENROLLMENT_PERIOD)
+                );
+    }
+
+    @Test
+    @DisplayName("CREATOR는 다른 CREATOR의 Course 상태를 변경할 수 없다")
+    void rejectManageOtherCreatorCourse() {
+        // given
+        User owner = userRepository.save(User.create(
+                "owner-creator@example.com",
+                "encoded-password",
+                "소유 크리에이터",
+                UserRole.CREATOR
+        ));
+        User otherCreator = userRepository.save(User.create(
+                "other-creator@example.com",
+                "encoded-password",
+                "다른 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser ownerActor = authenticate(owner.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(ownerActor, null, "타인 변경 실패 강의");
+        AuthenticatedUser otherActor = authenticate(otherCreator.getId(), UserRole.CREATOR);
+
+        // when & then
+        assertThatThrownBy(() -> courseService.openCourse(otherActor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("CREATOR는 존재하지 않는 Course 상태 변경을 요청해도 소유 확인에서 차단된다")
+    void rejectCreatorToManageUnknownCourse() {
+        // given
+        AuthenticatedUser actor = authenticate(1L, UserRole.CREATOR);
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.openCourse(actor, unknownCourseId, MANUAL_ENROLLMENT_END_AT))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("ADMIN의 존재하지 않는 Course 상태 변경은 COURSE_NOT_FOUND 예외가 발생한다")
+    void rejectUnknownCourseStatusTransitionByAdmin() {
+        // given
+        AuthenticatedUser actor = authenticate(1L, UserRole.ADMIN);
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.openCourse(actor, unknownCourseId, MANUAL_ENROLLMENT_END_AT))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.COURSE_NOT_FOUND)
                 );

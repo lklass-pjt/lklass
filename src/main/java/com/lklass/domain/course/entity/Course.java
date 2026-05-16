@@ -1,6 +1,8 @@
 package com.lklass.domain.course.entity;
 
+import com.lklass.domain.course.exception.CourseErrorCode;
 import com.lklass.global.entity.BaseTimeEntity;
+import com.lklass.global.exception.BusinessException;
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
@@ -115,6 +117,29 @@ public class Course extends BaseTimeEntity {
                 courseStartAt,
                 courseEndAt
         );
+    }
+
+    public void openManually(LocalDateTime now, LocalDateTime enrollmentEndAt) {
+        if (status != CourseStatus.DRAFT) {
+            throw new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION);
+        }
+        // 수동 OPEN은 운영자가 지금 모집을 시작하는 행위이므로 모집 시작 시각을 현재 시각으로 재설정한다.
+        if (!Objects.requireNonNull(now, "now must not be null")
+                .isBefore(Objects.requireNonNull(enrollmentEndAt, "enrollmentEndAt must not be null"))) {
+            throw new BusinessException(CourseErrorCode.ENROLLMENT_CLOSED);
+        }
+        if (!enrollmentEndAt.isBefore(coursePeriod.getStartAt())) {
+            throw new BusinessException(CourseErrorCode.INVALID_ENROLLMENT_PERIOD);
+        }
+        enrollmentPeriod = CoursePeriod.enrollment(now, enrollmentEndAt);
+        status = CourseStatus.OPEN;
+    }
+
+    public void close() {
+        if (status != CourseStatus.OPEN) {
+            throw new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION);
+        }
+        status = CourseStatus.CLOSED;
     }
 
     private static String requireNotBlank(String value, String fieldName) {

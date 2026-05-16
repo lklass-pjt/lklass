@@ -16,6 +16,7 @@ public class PageableConfig {
     @Bean
     public PageableHandlerMethodArgumentResolverCustomizer pageableCustomizer() {
         return resolver -> {
+            // 외부 API는 page=1부터 시작하고, 기본 조회는 최신 생성순으로 통일한다.
             resolver.setOneIndexedParameters(true);
             resolver.setMaxPageSize(MAX_SIZE);
             resolver.setFallbackPageable(PageRequest.of(

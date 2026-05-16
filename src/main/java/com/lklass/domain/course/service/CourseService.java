@@ -74,6 +74,7 @@ public class CourseService {
                 CourseStatus.DRAFT,
                 CourseStatusChangeReason.CREATED,
                 LocalDateTime.now(clock),
+                // changedBy는 Course 소유자가 아니라 실제 상태 변경 행위자를 기록한다.
                 CourseStatusChangedBy.user(actor.userId())
         ));
 
@@ -91,10 +92,64 @@ public class CourseService {
                 .orElseThrow(() -> new BusinessException(CourseErrorCode.COURSE_NOT_FOUND));
     }
 
+    @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
+    @Transactional
+    public void openCourse(AuthenticatedUser actor, Long courseId, LocalDateTime enrollmentEndAt) {
+        Course course = getCourseEntity(courseId);
+
+        CourseStatus fromStatus = course.getStatus();
+        course.openManually(LocalDateTime.now(clock), enrollmentEndAt);
+        recordStatusHistory(
+                course,
+                fromStatus,
+                course.getStatus(),
+                CourseStatusChangeReason.MANUAL_OPENED,
+                actor.userId()
+        );
+    }
+
+    @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
+    @Transactional
+    public void closeCourse(AuthenticatedUser actor, Long courseId) {
+        Course course = getCourseEntity(courseId);
+
+        CourseStatus fromStatus = course.getStatus();
+        course.close();
+        recordStatusHistory(
+                course,
+                fromStatus,
+                course.getStatus(),
+                CourseStatusChangeReason.MANUAL_CLOSED,
+                actor.userId()
+        );
+    }
+
     private Long resolveCreatorId(AuthenticatedUser actor, Long requestedCreatorId) {
         if (actor.role() == UserRole.ADMIN) {
             return requestedCreatorId;
         }
         return actor.userId();
+    }
+
+    private Course getCourseEntity(Long courseId) {
+        return courseRepository.findById(courseId)
+                .orElseThrow(() -> new BusinessException(CourseErrorCode.COURSE_NOT_FOUND));
+    }
+
+    private void recordStatusHistory(
+            Course course,
+            CourseStatus fromStatus,
+            CourseStatus toStatus,
+            CourseStatusChangeReason reason,
+            Long actorId
+    ) {
+        courseStatusHistoryRepository.save(CourseStatusHistory.record(
+                course,
+                fromStatus,
+                toStatus,
+                reason,
+                LocalDateTime.now(clock),
+                CourseStatusChangedBy.user(actorId)
+        ));
     }
 }
