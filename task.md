@@ -553,7 +553,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 8
-- 상태: 대기
+- 상태: 완료
 - 실행/검증 가능 항목:
   - 30분 초과 PENDING이 CANCELLED로 변경
   - 만료된 PENDING은 결제 확정 불가
@@ -564,12 +564,18 @@ workflow: implement
   - ShedLock
   - 만료 대상 조회 repository query
   - 상태 이력
+- 완료 내역:
+  - Enrollment `expire` 도메인 메서드 추가
+  - EnrollmentService `expirePendingPayments` use case 추가
+  - PENDING 만료 대상 조회 repository query 추가
+  - EnrollmentExpirationScheduler 추가
+  - 목록/만료 조회 인덱스 migration 추가
 
 ## Slice 10. 목록, 수강생 조회, 페이지네이션
 
 - 유형: AFK
 - 선행 조건: Slice 8
-- 상태: 대기
+- 상태: 완료
 - 실행/검증 가능 항목:
   - 내 수강 신청 목록 페이지 조회
   - Course 수강생 목록 페이지 조회
@@ -581,12 +587,18 @@ workflow: implement
   - page response
   - enrollment list DTO
   - course students DTO
+- 완료 내역:
+  - `GET /api/me/enrollments` API 추가
+  - `GET /api/courses/{courseId}/students` API 추가
+  - EnrollmentQueryResult projection DTO 추가
+  - PageResponse 기반 1-base 페이지 응답 적용
+  - Course 수강생 목록은 CoursePermission 기반 관리 권한으로 보호
 
 ## Slice 11. 동시성 테스트와 README 마무리
 
 - 유형: HITL
 - 선행 조건: Slice 7, Slice 10
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - 정원 5명 Course에 100건 virtual-thread 신청 시도 시 정원 초과 없음
   - 최종 `occupiedCount`와 활성 신청 수 일치
@@ -598,3 +610,8 @@ workflow: implement
   - API 예시
   - ERD/데이터 모델 설명
   - AI 활용 내역
+- 완료 내역:
+  - 정원 5명 Course에 100건 virtual-thread 동시 신청 통합 테스트 추가
+  - README는 사용자 별도 작업으로 남김
+- 검증:
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*' --tests com.lklass.global.config.DatabaseFoundationTest` 통과

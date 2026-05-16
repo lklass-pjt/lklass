@@ -5,6 +5,7 @@ import com.lklass.domain.course.entity.CourseStatus;
 import com.lklass.domain.course.exception.CourseErrorCode;
 import com.lklass.domain.course.repository.CourseRepository;
 import com.lklass.domain.enrollment.dto.EnrollmentApplyResult;
+import com.lklass.domain.enrollment.dto.EnrollmentQueryResult;
 import com.lklass.domain.enrollment.entity.ActiveEnrollment;
 import com.lklass.domain.enrollment.entity.Enrollment;
 import com.lklass.domain.enrollment.entity.EnrollmentStatus;
@@ -20,7 +21,10 @@ import com.lklass.global.exception.BusinessException;
 import com.lklass.global.security.AuthenticatedUser;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -105,6 +109,41 @@ public class EnrollmentService {
                 now,
                 EnrollmentStatusChangedBy.user(actor.userId())
         ));
+    }
+
+    @PreAuthorize("hasRole('STUDENT')")
+    @Transactional(readOnly = true)
+    public Page<EnrollmentQueryResult> getMyEnrollments(AuthenticatedUser actor, Pageable pageable) {
+        return enrollmentRepository.findMyEnrollments(actor.userId(), pageable);
+    }
+
+    @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
+    @Transactional(readOnly = true)
+    public Page<EnrollmentQueryResult> getCourseStudents(Long courseId, Pageable pageable) {
+        return enrollmentRepository.findCourseStudents(courseId, pageable);
+    }
+
+    @Transactional
+    public int expirePendingPayments() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        LocalDateTime expiredBefore = now.minus(enrollmentPolicyProperties.pendingPaymentTtl());
+        List<Enrollment> enrollments = enrollmentRepository.findPendingPaymentExpirationTargets(expiredBefore);
+
+        enrollments.forEach(enrollment -> {
+            EnrollmentStatus fromStatus = enrollment.getStatus();
+            enrollment.expire(now);
+            enrollmentRepository.deleteActiveEnrollment(enrollment.getId());
+            courseRepository.releaseSeat(enrollment.getCourseId());
+            enrollmentRepository.saveStatusHistory(EnrollmentStatusHistory.record(
+                    enrollment,
+                    fromStatus,
+                    enrollment.getStatus(),
+                    EnrollmentStatusChangeReason.EXPIRED,
+                    now,
+                    EnrollmentStatusChangedBy.system()
+            ));
+        });
+        return enrollments.size();
     }
 
     private BusinessException resolveEnrollmentFailure(Long courseId, LocalDateTime now) {

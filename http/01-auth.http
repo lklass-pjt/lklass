@@ -1,0 +1,46 @@
+@baseUrl = http://localhost:8080
+
+### 1-1. CREATOR 회원가입
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "creator-{{$uuid}}@example.com",
+  "password": "password123",
+  "name": "Creator",
+  "role": "CREATOR"
+}
+
+> {%
+    client.global.set("creatorToken", response.body.data.accessToken);
+%}
+
+### 1-2. STUDENT 회원가입
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "student-{{$uuid}}@example.com",
+  "password": "password123",
+  "name": "Student",
+  "role": "STUDENT"
+}
+
+> {%
+    client.global.set("studentToken", response.body.data.accessToken);
+%}
+
+### 1-3. ADMIN 회원가입
+POST {{baseUrl}}/api/auth/signup
+Content-Type: application/json
+
+{
+  "email": "admin-{{$uuid}}@example.com",
+  "password": "password123",
+  "name": "Admin",
+  "role": "ADMIN"
+}
+
+> {%
+    client.global.set("adminToken", response.body.data.accessToken);
+%}

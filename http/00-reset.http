@@ -1,0 +1,16 @@
+@baseUrl = http://localhost:8080
+
+### 데이터 초기화 안내
+# 이 프로젝트는 과제 범위상 테스트 데이터 삭제 API를 제공하지 않습니다.
+# HTTP 시나리오 실행 후 데이터를 완전히 초기화하려면 애플리케이션을 종료한 뒤 터미널에서 아래 명령을 실행하세요.
+#
+# docker compose down -v
+# docker compose up -d
+# ./gradlew bootRun
+#
+# - `down -v`는 MySQL volume을 삭제하므로 모든 로컬 데이터가 사라집니다.
+# - 기존 root 비밀번호/접속 권한 설정이 남아 생긴 Access denied 문제도 함께 초기화됩니다.
+# - 다시 `up -d` 후 애플리케이션을 실행하면 Flyway가 빈 DB에 migration을 다시 적용합니다.
+#
+# 참고용 health check 요청입니다. 서버가 떠 있으면 401/403/404가 아니라 정상 HTTP 응답을 받을 수 있습니다.
+GET {{baseUrl}}/api/courses?page=1&size=1

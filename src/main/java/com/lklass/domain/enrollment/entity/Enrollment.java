@@ -85,6 +85,14 @@ public class Enrollment extends BaseTimeEntity {
         throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
     }
 
+    public void expire(LocalDateTime expiredAt) {
+        Objects.requireNonNull(expiredAt, "expiredAt must not be null");
+        if (status != EnrollmentStatus.PENDING) {
+            throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
+        }
+        cancelAt(expiredAt);
+    }
+
     private void cancelAt(LocalDateTime cancelledAt) {
         this.status = EnrollmentStatus.CANCELLED;
         this.cancelledAt = cancelledAt;
