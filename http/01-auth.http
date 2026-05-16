@@ -12,7 +12,7 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("creatorToken", response.body.data.accessToken);
+    client.global.set("authScenarioCreatorToken", response.body.data.accessToken);
 %}
 
 ### 1-2. STUDENT 회원가입
@@ -27,7 +27,7 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("studentToken", response.body.data.accessToken);
+    client.global.set("authScenarioStudentToken", response.body.data.accessToken);
 %}
 
 ### 1-3. ADMIN 회원가입
@@ -42,5 +42,5 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("adminToken", response.body.data.accessToken);
+    client.global.set("authScenarioAdminToken", response.body.data.accessToken);
 %}

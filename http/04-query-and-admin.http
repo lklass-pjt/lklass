@@ -12,7 +12,7 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("queryCreatorToken", response.body.data.accessToken);
+    client.global.set("queryScenarioCreatorToken", response.body.data.accessToken);
 %}
 
 ### 4-2. 시나리오 준비: STUDENT 회원가입
@@ -27,7 +27,7 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("queryStudentToken", response.body.data.accessToken);
+    client.global.set("queryScenarioStudentToken", response.body.data.accessToken);
 %}
 
 ### 4-3. 시나리오 준비: ADMIN 회원가입
@@ -42,12 +42,12 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("queryAdminToken", response.body.data.accessToken);
+    client.global.set("queryScenarioAdminToken", response.body.data.accessToken);
 %}
 
 ### 4-4. 시나리오 준비: Course 생성
 POST {{baseUrl}}/api/courses
-Authorization: Bearer {{queryCreatorToken}}
+Authorization: Bearer {{queryScenarioCreatorToken}}
 Content-Type: application/json
 
 {
@@ -67,7 +67,7 @@ Content-Type: application/json
 
 ### 4-5. 시나리오 준비: Course 수동 OPEN
 PATCH {{baseUrl}}/api/courses/{{queryScenarioCourseId}}/open
-Authorization: Bearer {{queryCreatorToken}}
+Authorization: Bearer {{queryScenarioCreatorToken}}
 Content-Type: application/json
 
 {
@@ -76,7 +76,7 @@ Content-Type: application/json
 
 ### 4-6. 시나리오 준비: STUDENT 수강 신청
 POST {{baseUrl}}/api/courses/{{queryScenarioCourseId}}/enrollments
-Authorization: Bearer {{queryStudentToken}}
+Authorization: Bearer {{queryScenarioStudentToken}}
 
 > {%
     client.global.set("queryScenarioEnrollmentId", response.body.data.id);
@@ -84,20 +84,20 @@ Authorization: Bearer {{queryStudentToken}}
 
 ### 4-7. 시나리오 준비: 결제 확정
 POST {{baseUrl}}/api/enrollments/{{queryScenarioEnrollmentId}}/confirm-payment
-Authorization: Bearer {{queryStudentToken}}
+Authorization: Bearer {{queryScenarioStudentToken}}
 
 ### 4-8. STUDENT가 내 수강 신청 목록 조회
 GET {{baseUrl}}/api/me/enrollments?page=1&size=10
-Authorization: Bearer {{queryStudentToken}}
+Authorization: Bearer {{queryScenarioStudentToken}}
 
 ### 4-9. ADMIN이 Course별 수강생 목록 조회
 GET {{baseUrl}}/api/courses/{{queryScenarioCourseId}}/students?page=1&size=10
-Authorization: Bearer {{queryAdminToken}}
+Authorization: Bearer {{queryScenarioAdminToken}}
 
 ### 4-10. CREATOR가 본인 Course 수강생 목록 조회
 GET {{baseUrl}}/api/courses/{{queryScenarioCourseId}}/students?page=1&size=10
-Authorization: Bearer {{queryCreatorToken}}
+Authorization: Bearer {{queryScenarioCreatorToken}}
 
 ### 4-11. STUDENT가 Course별 수강생 목록 조회 시도: 403 기대
 GET {{baseUrl}}/api/courses/{{queryScenarioCourseId}}/students?page=1&size=10
-Authorization: Bearer {{queryStudentToken}}
+Authorization: Bearer {{queryScenarioStudentToken}}
