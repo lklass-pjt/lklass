@@ -420,6 +420,35 @@ workflow: implement
   - `./gradlew test --tests 'com.lklass.domain.course.repository.*'` 통과
   - `./gradlew test` 통과
 
+### Slice 7-C. 수강 신청 서비스 use case
+
+- 상태: 완료
+- 목표:
+  - STUDENT가 OPEN Course에 수강 신청하면 좌석을 확보하고 PENDING 신청을 생성
+  - 활성 중복 신청과 정원 초과를 명확한 비즈니스 예외로 변환
+  - 수강 신청 생성 이력을 같은 트랜잭션에서 저장
+- 완료 내역:
+  - Enrollment/ActiveEnrollment/EnrollmentStatusHistory repository 추가
+  - EnrollmentRepository wrapper에서 ActiveEnrollment unique 충돌을 `ALREADY_ENROLLED`로 변환
+  - EnrollmentService 신청 use case 추가
+  - EnrollmentApplyResult DTO 추가
+  - EnrollmentErrorCode 추가
+- 현재 검증 가능 항목:
+  - STUDENT 신청 성공 시 `occupiedCount` 증가, Enrollment/ActiveEnrollment/History 저장
+  - STUDENT가 아닌 사용자의 신청 권한 거부
+  - 같은 Course/User 활성 중복 신청 거부
+  - 정원 초과 신청 거부
+  - DRAFT Course 신청 거부
+  - CLOSED/모집 전/모집 마감 Course 신청 거부
+  - 존재하지 않는 Course 신청 거부
+  - 존재하지 않는 사용자 신청 거부
+  - 같은 Course에 서로 다른 STUDENT 신청 시 `occupiedCount` 누적 증가
+- 검증:
+  - 테스트 워크플로우 보강: 수강 신청 서비스의 상태/기간/사용자 존재성/복수 학생 경계 테스트 추가
+  - `./gradlew test --tests com.lklass.domain.enrollment.service.EnrollmentServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
+
 ## Slice 8. 결제 확정과 취소
 
 - 유형: AFK
