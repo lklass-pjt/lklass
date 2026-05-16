@@ -69,7 +69,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 2, Slice 3
-- 상태: 진행 중
+- 상태: 완료
 - 진행 내역:
   - Slice 4-A 완료: User 엔티티, UserRole, users Flyway migration, UserJpaRepository 추가
   - `UserPersistenceTest`: User 저장/조회와 email unique 제약 검증
@@ -109,20 +109,146 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 4
-- 상태: 대기
-- 실행/검증 가능 항목:
+- 상태: 진행 중
+- 전체 목표:
   - creator가 Course 생성
-  - Course 목록/상세 조회
+  - Course 목록 조회와 상태 필터
+  - Course 상세 조회와 현재 신청 인원 포함
   - `DRAFT -> OPEN` 성공
   - `OPEN -> CLOSED` 성공
   - 잘못된 상태 전이 실패
   - Course 상태 이력이 같은 트랜잭션에서 기록됨
+
+### Slice 5-A. Course 엔티티와 스키마
+
+- 상태: 완료
+- 완료 내역:
+  - Course 엔티티, CourseStatus, CourseStatusHistory, courses Flyway migration 추가
+  - CoursePrice, CourseCapacity, CoursePeriod, CourseStatusChangedBy 값 객체 적용
+  - CourseStatusChangeReason enum 적용
+  - CourseStatusHistory는 Course 단방향 ManyToOne으로 상태 이력의 소유 관계를 표현
+  - 리뷰 보강: `occupied_count <= capacity` DB CHECK 제약 추가
+  - 리뷰 보강: CoursePrice 금액을 소수점 2자리로 정규화하고 2자리 초과 입력 거부
+  - 리뷰 보강: Course 제목/설명 공백 값 도메인 레벨 거부
+- 현재 검증 가능 항목:
+  - Course 생성 시 기본 상태 `DRAFT`
+  - Course 생성 시 `occupiedCount = 0`
+  - 가격, 정원, 모집 기간, 수강 기간 생성 규칙
+  - CourseStatusHistory 기본 이력 값 보존
+  - Flyway migration과 JPA entity 매핑 validate
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.LklassApplicationTests` 통과
+  - `./gradlew test` 통과
+  - `./gradlew check` 통과
+
+### Slice 5-B. Course 생성 API
+
+- 상태: 완료
+- 목표:
+  - creator/admin이 Course 생성
+  - student는 Course 생성 불가
+  - 생성된 Course는 `DRAFT` 상태
+  - 생성 시 CREATED 상태 이력이 같은 트랜잭션에서 저장됨
+- 진행 내역:
+  - Slice 5-B1 완료: CourseJpaRepository, CourseRepository wrapper, CourseStatusHistory repository 추가
+  - Slice 5-B1 완료: CourseService 생성 use case 추가
+  - Slice 5-B1 완료: Course 생성 시 CREATED 상태 이력 저장 검증
+  - Slice 5-B1 보정: CourseService가 엔티티 대신 CourseCreateResult를 반환하도록 변경
+  - Slice 5-B2 완료: CourseController, Course 생성 request/response DTO 추가
+  - Slice 5-B2 완료: `@PreAuthorize` 기반 Course 생성 권한 검증 추가
+  - Slice 5-B2 완료: CREATOR는 본인 명의 생성, ADMIN은 creatorId 지정 생성 정책 적용
+  - Slice 5-B2 완료: 서비스 method security 거부 예외가 403 공통 응답으로 내려가도록 보강
+  - Slice 5-B2 보강: ADMIN 대리 생성 시 상태 이력의 changedBy를 실제 행위자인 ADMIN으로 기록
+  - 테스트 워크플로우 보강: Course 생성 테스트를 API 계약, 권한 정책, 서비스 통합 테스트로 분리
+  - 테스트 워크플로우 보강: CoursePermissionTest에서 CREATOR/ADMIN/STUDENT 권한 조합 전체 검증
+  - 테스트 워크플로우 보강: CourseControllerTest는 정상 생성, 401, 대표 403, validation 400 API 계약만 검증
+  - 테스트 워크플로우 보강: CourseServiceTest는 저장 성공, creator 존재/role 검증, `@PreAuthorize` 대표 차단 검증으로 정리
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.security.CoursePermissionTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest --tests com.lklass.domain.course.service.CourseServiceTest --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test` 통과
+  - `./gradlew check` 통과
 - 범위:
-  - Course entity
-  - CourseStatusHistory
-  - Course repository wrapper/JPA repository
-  - Course service/controller/DTO
-  - pagination response
+  - CourseJpaRepository
+  - CourseRepository wrapper
+  - CourseService
+  - CourseController
+  - Course 생성 request/response DTO
+  - CourseSecurityConfigurer 또는 method security 권한 검증
+
+### Slice 5-C. Course 목록/상세 조회
+
+- 상태: 완료
+- 목표:
+  - Course 목록 조회
+  - status 필터 조회
+  - Course 상세 조회
+  - 상세 응답에 현재 신청 인원 포함
+- 진행 내역:
+  - Slice 5-C1 완료: Course 목록/상세 조회 service use case 추가
+  - Slice 5-C1 완료: Course 목록 조회에 Pageable과 status 필터 적용
+  - Slice 5-C1 완료: Course 상세 조회 결과에 현재 신청 인원 `occupiedCount` 포함
+  - Slice 5-C1 완료: 없는 Course 상세 조회 시 `COURSE_NOT_FOUND` 예외 처리
+  - Slice 5-C2 완료: Course 목록/상세 조회 API 추가
+  - Slice 5-C2 완료: Course 조회 응답에 `creatorName` 포함
+  - Slice 5-C2 완료: Course 조회를 User join DTO projection으로 변경
+  - Slice 5-C2 완료: 공통 페이지 응답과 1-base pageable 정책 추가
+  - 테스트 워크플로우 보강: 잘못된 status query parameter가 400 validation 공통 응답으로 반환되는지 검증
+  - 테스트 워크플로우 보강: query parameter 타입 변환 실패를 `VALIDATION_ERROR`로 변환하는 공통 예외 처리 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests com.lklass.global.exception.GlobalExceptionHandlerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*' --tests com.lklass.global.exception.GlobalExceptionHandlerTest` 통과
+- 범위:
+  - Course 목록/상세 DTO
+  - CourseRepository 조회 메서드
+  - CourseService 조회 use case
+  - CourseController 조회 API
+  - pagination은 복잡도가 낮으면 함께 적용
+
+### Slice 5-D. Course 상태 전이와 이력
+
+- 상태: 완료
+- 목표:
+  - `DRAFT -> OPEN` 성공
+  - `OPEN -> CLOSED` 성공
+  - `DRAFT -> CLOSED`, `CLOSED -> OPEN` 같은 잘못된 전이 실패
+  - 상태 변경 이력이 같은 트랜잭션에서 저장됨
+- 진행 내역:
+  - Slice 5-D1 완료: Course.open(), Course.close() 도메인 상태 전이 메서드 추가
+  - Slice 5-D1 완료: Course 수동 OPEN/CLOSED service use case 추가
+  - Slice 5-D1 완료: 잘못된 상태 전이 시 `INVALID_COURSE_STATUS_TRANSITION` 예외 처리
+  - Slice 5-D1 완료: 수동 상태 변경 이력을 같은 트랜잭션에서 저장
+  - Slice 5-D1 완료: ADMIN은 모든 Course, CREATOR는 본인 Course만 상태 변경 가능하도록 검증
+  - Slice 5-D1 보강: Course 상태 변경 권한을 `@PreAuthorize`와 CoursePermission으로 통일
+  - Slice 5-D1 보강: CREATOR 소유 Course 확인은 `existsByIdAndCreatorId`로 가볍게 검증
+  - Slice 5-D1 보강: 수동 OPEN은 요청한 모집 마감일을 받고 모집 시작일을 현재 시각으로 변경
+  - Slice 5-D1 보강: 수동 OPEN 모집 마감일이 현재 시각 이후가 아니면 `ENROLLMENT_CLOSED` 예외 처리
+  - Slice 5-D1 보강: 수동 OPEN 모집 마감일이 수강 시작일 이전이 아니면 `INVALID_ENROLLMENT_PERIOD` 예외 처리
+  - 테스트 워크플로우 보강: Course entity 상태 전이 성공/실패 규칙을 단위 테스트로 고정
+  - 테스트 워크플로우 보강: Course 관리 권한의 인증 없음/principal 타입 불일치 경계 테스트 추가
+  - Slice 5-D2 완료: Course 수동 OPEN/CLOSE API 추가
+  - Slice 5-D2 완료: OPEN API는 요청 body로 모집 마감일을 받도록 구현
+  - Slice 5-D2 완료: 상태 전이 API의 성공, 401, 403, 404, 잘못된 상태 전이, validation 실패 계약 검증
+  - 테스트 워크플로우 보강: 상태 변경 API 404 계약은 ADMIN 기준으로 검증하고 CREATOR의 없는 Course 변경은 403으로 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.security.CoursePermissionTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+- 범위:
+  - Course.open()
+  - Course.close()
+  - CourseStatusHistory 저장 repository
+  - CourseService 상태 전이 use case
+  - CourseController 상태 전이 API
 
 ## Slice 6. Course 스케줄러
 

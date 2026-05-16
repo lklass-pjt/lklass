@@ -35,6 +35,10 @@ public class UserRepository {
         return userJpaRepository.findByEmail(email);
     }
 
+    public Optional<User> findById(Long userId) {
+        return userJpaRepository.findById(userId);
+    }
+
     private boolean hasConstraintName(Throwable throwable, String constraintName) {
         Throwable current = throwable;
         while (current != null) {

@@ -2,6 +2,7 @@ package com.lklass.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.lklass.domain.course.entity.CourseStatus;
 import com.lklass.global.common.CommonResponse;
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.AfterEach;
@@ -16,6 +17,8 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 class GlobalExceptionHandlerTest {
 
@@ -87,8 +90,38 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().traceId()).isEqualTo("trace-validation");
     }
 
+    @Test
+    @DisplayName("요청 파라미터 타입 변환 실패는 VALIDATION_ERROR 공통 실패 응답으로 변환된다")
+    void handleTypeMismatch() throws Exception {
+        // given
+        MDC.put(TraceContext.TRACE_ID_KEY, "trace-type-mismatch");
+        MethodArgumentTypeMismatchException exception = new MethodArgumentTypeMismatchException(
+                "INVALID",
+                CourseStatus.class,
+                "status",
+                methodParameterForStatusRequest(),
+                new IllegalArgumentException("No enum constant")
+        );
+
+        // when
+        ResponseEntity<CommonResponse<Void>> response = exceptionHandler.handleTypeMismatch(exception);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().isSuccess()).isFalse();
+        assertThat(response.getBody().code()).isEqualTo(GlobalErrorCode.VALIDATION_ERROR.code());
+        assertThat(response.getBody().message()).isEqualTo("status: Invalid request value.");
+        assertThat(response.getBody().traceId()).isEqualTo("trace-type-mismatch");
+    }
+
     private MethodParameter methodParameterForCreateRequest() throws NoSuchMethodException {
         Method method = ValidationTestController.class.getDeclaredMethod("create", CreateRequest.class);
+        return new MethodParameter(method, 0);
+    }
+
+    private MethodParameter methodParameterForStatusRequest() throws NoSuchMethodException {
+        Method method = ValidationTestController.class.getDeclaredMethod("list", CourseStatus.class);
         return new MethodParameter(method, 0);
     }
 
@@ -99,6 +132,10 @@ class GlobalExceptionHandlerTest {
 
         @SuppressWarnings("unused")
         void create(@RequestBody CreateRequest request) {
+        }
+
+        @SuppressWarnings("unused")
+        void list(@RequestParam CourseStatus status) {
         }
     }
 }
