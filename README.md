@@ -78,7 +78,22 @@ http/03-enrollment-payment-cancel.http
 http/04-query-and-admin.http
 ```
 
-각 파일은 JetBrains HTTP Client 기준으로 작성했습니다. 파일 간 실행 순서 의존성을 없애기 위해 시나리오 파일마다 필요한 회원가입, Course 생성, OPEN 준비 요청을 자체 포함합니다. 한 파일 안에서는 위에서 아래 순서대로 실행하면 됩니다.
+각 파일은 JetBrains HTTP Client의 response handler script를 사용합니다. 파일 간 실행 순서 의존성은 없고, 한 파일 안에서 위에서 아래 순서대로 실행하면 이전 요청 응답의 `data.accessToken`, Course `data.id`, Enrollment `data.id`를 `client.global`에 자동 저장한 뒤 다음 요청이 참조합니다.
+
+```http
+POST {{baseUrl}}/api/courses/{{enrollmentScenarioCourseId}}/enrollments
+Authorization: Bearer {{enrollmentScenarioStudentToken}}
+
+> {%
+    client.global.set("enrollmentScenarioEnrollmentId", response.body.data.id);
+%}
+
+###
+POST {{baseUrl}}/api/enrollments/{{enrollmentScenarioEnrollmentId}}/confirm-payment
+Authorization: Bearer {{enrollmentScenarioStudentToken}}
+```
+
+`client.global`은 HTTP Client 세션 전역 저장소이므로 변수 충돌을 피하기 위해 `courseScenario...`, `enrollmentScenario...`, `queryScenario...`처럼 시나리오별 prefix를 붙였습니다.
 
 HTTP 시나리오 실행 후 데이터를 초기화하려면 애플리케이션을 종료한 뒤 MySQL volume을 삭제하면 됩니다.
 

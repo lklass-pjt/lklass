@@ -12,12 +12,12 @@ Content-Type: application/json
 }
 
 > {%
-    client.global.set("courseCreatorToken", response.body.data.accessToken);
+    client.global.set("courseScenarioCreatorToken", response.body.data.accessToken);
 %}
 
 ### 2-2. Course 생성: 생성 직후 DRAFT
 POST {{baseUrl}}/api/courses
-Authorization: Bearer {{courseCreatorToken}}
+Authorization: Bearer {{courseScenarioCreatorToken}}
 Content-Type: application/json
 
 {
@@ -37,7 +37,7 @@ Content-Type: application/json
 
 ### 2-3. Course 수동 OPEN: 모집 시작은 현재 시각, 모집 마감은 요청값
 PATCH {{baseUrl}}/api/courses/{{courseScenarioCourseId}}/open
-Authorization: Bearer {{courseCreatorToken}}
+Authorization: Bearer {{courseScenarioCreatorToken}}
 Content-Type: application/json
 
 {
@@ -46,13 +46,16 @@ Content-Type: application/json
 
 ### 2-4. OPEN Course 상세 조회: occupiedCount 확인
 GET {{baseUrl}}/api/courses/{{courseScenarioCourseId}}
+Authorization: Bearer {{courseScenarioCreatorToken}}
 
 ### 2-5. Course 목록 조회: 상태 필터 OPEN
 GET {{baseUrl}}/api/courses?status=OPEN&page=1&size=10
+Authorization: Bearer {{courseScenarioCreatorToken}}
 
 ### 2-6. Course 수동 CLOSED
 PATCH {{baseUrl}}/api/courses/{{courseScenarioCourseId}}/close
-Authorization: Bearer {{courseCreatorToken}}
+Authorization: Bearer {{courseScenarioCreatorToken}}
 
 ### 2-7. CLOSED Course 상세 조회
 GET {{baseUrl}}/api/courses/{{courseScenarioCourseId}}
+Authorization: Bearer {{courseScenarioCreatorToken}}
