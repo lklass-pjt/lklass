@@ -182,12 +182,28 @@ workflow: implement
 
 ### Slice 5-C. Course 목록/상세 조회
 
-- 상태: 대기
+- 상태: 완료
 - 목표:
   - Course 목록 조회
   - status 필터 조회
   - Course 상세 조회
   - 상세 응답에 현재 신청 인원 포함
+- 진행 내역:
+  - Slice 5-C1 완료: Course 목록/상세 조회 service use case 추가
+  - Slice 5-C1 완료: Course 목록 조회에 Pageable과 status 필터 적용
+  - Slice 5-C1 완료: Course 상세 조회 결과에 현재 신청 인원 `occupiedCount` 포함
+  - Slice 5-C1 완료: 없는 Course 상세 조회 시 `COURSE_NOT_FOUND` 예외 처리
+  - Slice 5-C2 완료: Course 목록/상세 조회 API 추가
+  - Slice 5-C2 완료: Course 조회 응답에 `creatorName` 포함
+  - Slice 5-C2 완료: Course 조회를 User join DTO projection으로 변경
+  - Slice 5-C2 완료: 공통 페이지 응답과 1-base pageable 정책 추가
+  - 테스트 워크플로우 보강: 잘못된 status query parameter가 400 validation 공통 응답으로 반환되는지 검증
+  - 테스트 워크플로우 보강: query parameter 타입 변환 실패를 `VALIDATION_ERROR`로 변환하는 공통 예외 처리 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests com.lklass.global.exception.GlobalExceptionHandlerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*' --tests com.lklass.global.exception.GlobalExceptionHandlerTest` 통과
 - 범위:
   - Course 목록/상세 DTO
   - CourseRepository 조회 메서드

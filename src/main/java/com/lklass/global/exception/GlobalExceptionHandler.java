@@ -12,6 +12,7 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -56,6 +57,19 @@ public class GlobalExceptionHandler {
         String message = "request body: 요청 본문을 읽을 수 없습니다.";
 
         AppLog.warn(log, errorCode.code(), exception.getMessage());
+
+        return ResponseEntity
+                .status(errorCode.httpStatus())
+                .body(CommonResponse.fail(errorCode.code(), message, traceId));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<CommonResponse<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException exception) {
+        ErrorCode errorCode = GlobalErrorCode.VALIDATION_ERROR;
+        String traceId = MDC.get(TraceContext.TRACE_ID_KEY);
+        String message = exception.getName() + ": " + errorCode.message();
+
+        AppLog.validationFailed(log, errorCode, 1, message);
 
         return ResponseEntity
                 .status(errorCode.httpStatus())

@@ -5,9 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.lklass.TestcontainersConfiguration;
 import com.lklass.domain.course.dto.CourseCreateResult;
+import com.lklass.domain.course.dto.CourseQueryResult;
 import com.lklass.domain.course.entity.CourseStatus;
 import com.lklass.domain.course.entity.CourseStatusChangedBy;
 import com.lklass.domain.course.entity.CourseStatusChangeReason;
+import com.lklass.domain.course.exception.CourseErrorCode;
 import com.lklass.domain.course.repository.CourseRepository;
 import com.lklass.domain.course.repository.CourseStatusHistoryRepository;
 import com.lklass.domain.user.entity.User;
@@ -31,6 +33,9 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -253,6 +258,130 @@ class CourseServiceTest {
                 COURSE_START_AT,
                 COURSE_END_AT
         )).isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("Course 목록 조회는 페이지 정보와 현재 신청 인원을 포함한 Course 요약을 반환한다")
+    void getCourses() {
+        // given
+        User creator = userRepository.save(User.create(
+                "list-creator@example.com",
+                "encoded-password",
+                "목록 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult firstCourse = createCourse(actor, null, "목록 조회 강의 A");
+        CourseCreateResult secondCourse = createCourse(actor, null, "목록 조회 강의 B");
+        PageRequest pageable = PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "id"));
+
+        // when
+        Page<CourseQueryResult> result = courseService.getCourses(null, pageable);
+
+        // then
+        assertThat(result.getNumber()).isZero();
+        assertThat(result.getSize()).isEqualTo(10);
+        assertThat(result.getContent())
+                .extracting(CourseQueryResult::id)
+                .contains(firstCourse.id(), secondCourse.id());
+        assertThat(result.getContent())
+                .filteredOn(course -> course.id().equals(firstCourse.id()))
+                .singleElement()
+                .satisfies(course -> {
+                    assertThat(course.creatorId()).isEqualTo(creator.getId());
+                    assertThat(course.creatorName()).isEqualTo("목록 크리에이터");
+                    assertThat(course.title()).isEqualTo("목록 조회 강의 A");
+                    assertThat(course.price()).isEqualByComparingTo("10000.00");
+                    assertThat(course.capacity()).isEqualTo(30);
+                    assertThat(course.occupiedCount()).isZero();
+                    assertThat(course.status()).isEqualTo(CourseStatus.DRAFT);
+                });
+    }
+
+    @Test
+    @DisplayName("Course 목록 조회는 status 필터가 있으면 해당 상태의 Course만 반환한다")
+    void getCoursesByStatus() {
+        // given
+        User creator = userRepository.save(User.create(
+                "status-list-creator@example.com",
+                "encoded-password",
+                "상태 필터 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult draftCourse = createCourse(actor, null, "상태 필터 강의");
+        PageRequest pageable = PageRequest.of(0, 10, Sort.by(Sort.Direction.DESC, "id"));
+
+        // when
+        Page<CourseQueryResult> result = courseService.getCourses(CourseStatus.DRAFT, pageable);
+
+        // then
+        assertThat(result.getContent())
+                .extracting(CourseQueryResult::id)
+                .contains(draftCourse.id());
+        assertThat(result.getContent())
+                .allSatisfy(course -> assertThat(course.status()).isEqualTo(CourseStatus.DRAFT));
+    }
+
+    @Test
+    @DisplayName("Course 상세 조회는 현재 신청 인원을 포함한 Course 정보를 반환한다")
+    void getCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "detail-creator@example.com",
+                "encoded-password",
+                "상세 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "상세 조회 강의");
+
+        // when
+        CourseQueryResult result = courseService.getCourse(createdCourse.id());
+
+        // then
+        assertThat(result.id()).isEqualTo(createdCourse.id());
+        assertThat(result.creatorId()).isEqualTo(creator.getId());
+        assertThat(result.creatorName()).isEqualTo("상세 크리에이터");
+        assertThat(result.title()).isEqualTo("상세 조회 강의");
+        assertThat(result.description()).isEqualTo("스프링 부트와 JPA 기초 강의");
+        assertThat(result.price()).isEqualByComparingTo("10000.00");
+        assertThat(result.capacity()).isEqualTo(30);
+        assertThat(result.occupiedCount()).isZero();
+        assertThat(result.status()).isEqualTo(CourseStatus.DRAFT);
+        assertThat(result.autoPublishEnabled()).isFalse();
+        assertThat(result.enrollmentStartAt()).isEqualTo(ENROLLMENT_START_AT);
+        assertThat(result.enrollmentEndAt()).isEqualTo(ENROLLMENT_END_AT);
+        assertThat(result.courseStartAt()).isEqualTo(COURSE_START_AT);
+        assertThat(result.courseEndAt()).isEqualTo(COURSE_END_AT);
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 Course 상세 조회는 COURSE_NOT_FOUND 예외가 발생한다")
+    void rejectUnknownCourseDetail() {
+        // given
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.getCourse(unknownCourseId))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.COURSE_NOT_FOUND)
+                );
+    }
+
+    private CourseCreateResult createCourse(AuthenticatedUser actor, Long requestedCreatorId, String title) {
+        return courseService.createCourse(
+                actor,
+                requestedCreatorId,
+                title,
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                ENROLLMENT_START_AT,
+                ENROLLMENT_END_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
     }
 
     private AuthenticatedUser authenticate(Long userId, UserRole role) {

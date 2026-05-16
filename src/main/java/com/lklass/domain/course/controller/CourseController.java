@@ -3,15 +3,23 @@ package com.lklass.domain.course.controller;
 import com.lklass.domain.course.dto.CourseCreateRequest;
 import com.lklass.domain.course.dto.CourseCreateResponse;
 import com.lklass.domain.course.dto.CourseCreateResult;
+import com.lklass.domain.course.dto.CourseQueryResult;
+import com.lklass.domain.course.entity.CourseStatus;
 import com.lklass.domain.course.service.CourseService;
 import com.lklass.global.common.CommonResponse;
+import com.lklass.global.common.PageResponse;
 import com.lklass.global.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -40,5 +48,19 @@ public class CourseController {
         );
 
         return CommonResponse.success(CourseCreateResponse.from(result));
+    }
+
+    @GetMapping
+    public CommonResponse<PageResponse<CourseQueryResult>> getCourses(
+            @RequestParam(required = false) CourseStatus status,
+            Pageable pageable
+    ) {
+        Page<CourseQueryResult> result = courseService.getCourses(status, pageable);
+        return CommonResponse.success(PageResponse.from(result));
+    }
+
+    @GetMapping("/{courseId}")
+    public CommonResponse<CourseQueryResult> getCourse(@PathVariable Long courseId) {
+        return CommonResponse.success(courseService.getCourse(courseId));
     }
 }
