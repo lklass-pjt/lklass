@@ -156,7 +156,6 @@ com.lklass
     exception
     logging
     security
-    event
     config
   domain
     user
@@ -173,7 +172,6 @@ service
 repository
 entity
 dto
-event
 ```
 
 원칙:
@@ -182,7 +180,7 @@ event
 - Service는 use case와 트랜잭션 경계를 담당한다.
 - Entity는 상태 전이 같은 핵심 도메인 규칙을 메서드로 표현한다.
 - Repository는 JPA 접근만 담당한다.
-- 공통 응답, 예외, 로깅, 보안, 이벤트 기반 시설은 `global`에 둔다.
+- 공통 응답, 예외, 로깅, 보안 기반 시설은 `global`에 둔다.
 - 과제 가독성을 우선해 포트/어댑터 계층은 도입하지 않는다.
 
 ## 4-2. 도메인 경계
@@ -288,7 +286,7 @@ domain.payment
 - Entity 간 양방향 연관관계는 최소화한다.
 - `Course.creatorId`, `Enrollment.userId`, `Enrollment.courseId`처럼 id 참조를 기본으로 두고, 조회 응답에서 필요한 정보는 Service/Repository query로 조합한다.
 - 필수 정합성 처리의 흐름은 서비스 코드에 명시한다.
-- 이벤트는 후속 반응과 확장 포인트에 사용한다.
+- 이벤트는 현재 구현 범위에서는 제외하고, 알림/통계 같은 후속 반응이 생길 때 확장 포인트로 사용한다.
 
 ### 삭제 정책
 
@@ -1032,7 +1030,7 @@ Controller 응답은 `CommonResponse<T>`로 감싼다.
 
 ### 로깅
 
-`TraceIdFilter`를 두어 모든 요청마다 traceId를 생성하거나 `X-Trace-Id` 헤더 값을 사용한다.
+`TraceIdFilter`를 두어 모든 요청마다 traceId를 생성하거나 `X-Trace-Id` 헤더 값을 사용한다. `RequestLoggingFilter`는 traceId가 MDC에 들어간 이후 실행되어 HTTP 요청 요약 로그를 남긴다.
 
 처리 흐름:
 
@@ -1041,16 +1039,24 @@ Controller 응답은 `CommonResponse<T>`로 감싼다.
 3. 예외 응답에 traceId 포함
 4. 요청 종료 시 MDC clear
 
+요청 로그 예시:
+
+```text
+[HTTP_REQUEST] method=POST, uri=/api/courses/1/enrollments, status=200, elapsedMs=84
+```
+
 로그 레벨 원칙:
 
 - 비즈니스 예외: `warn`
 - validation 실패: `warn`
-- 인증/인가 실패: `warn` 또는 `info`
+- 인증 없음: `debug`
+- 권한 없음: `warn`
 - 예상하지 못한 서버 예외: `error`
 - 스케줄러 처리 결과: `info`
+- 핵심 비즈니스 command 성공: `info`
 - 동시성 테스트나 정원 확보 실패 같은 정상적인 비즈니스 거절: 필요 시 `debug` 또는 `info`
 
-`AppLog` 같은 공통 로그 유틸을 두어 예외/스케줄러/이벤트 로그 포맷을 중앙화한다. 과제에서는 과도한 AOP 로깅보다 핵심 처리 지점의 명시적 로그를 우선한다.
+`AppLog` 같은 공통 로그 유틸을 두어 예외/스케줄러/비즈니스 이벤트 로그 포맷을 중앙화한다. 과제에서는 과도한 AOP 로깅보다 핵심 처리 지점의 명시적 로그를 우선한다.
 
 ### 로그 저장
 
@@ -1058,12 +1064,10 @@ Controller 응답은 `CommonResponse<T>`로 감싼다.
 
 로그 출력 정책:
 
-- local/test: console 중심
-- prod: console + rolling file
-- 파일 경로: `logs/lklass-api.log`
-- rolling file pattern: `logs/lklass-api.%d{yyyy-MM-dd}.%i.log`
-- max file size: 50MB
-- max history: 30일
+- local/test/prod 모두 console 중심
+- 로컬/과제 실행에서는 IDE와 터미널에서 바로 확인한다.
+- 컨테이너/운영 환경에서는 stdout 로그를 외부 수집기가 수집하는 구조를 우선한다.
+- rolling file appender는 현재 과제 범위에서는 제외하고, 운영 요구가 생기면 확장한다.
 
 로그 패턴:
 
@@ -1075,53 +1079,18 @@ Controller 응답은 `CommonResponse<T>`로 감싼다.
 
 ## 14-1. 이벤트 처리 정책
 
-이벤트 처리는 `soomsoom`의 `ApplicationEventPublisher`와 `@TransactionalEventListener` 패턴을 참고하되, 과제 범위에 맞춰 작게 적용한다.
+초기 설계에서는 공통 DomainEvent 골격을 고려했지만, 최종 구현에서는 사용하지 않는 이벤트 기반 시설을 제거했다. 현재 과제 범위에서는 상태 변경과 반드시 함께 성공해야 하는 정합성 작업을 서비스 트랜잭션 안에서 명시적으로 처리하는 편이 더 읽기 쉽고 안전하다고 판단했다.
 
-공통 이벤트 모델:
+현재 구현 원칙:
 
-```java
-public record DomainEvent<T extends EventPayload>(
-    EventType eventType,
-    T payload
-) {
-}
-```
-
-```java
-public interface EventPayload {
-}
-```
-
-이벤트 타입 후보:
-
-- `USER_SIGNED_UP`
-- `COURSE_OPENED`
-- `COURSE_CLOSED`
-- `ENROLLMENT_APPLIED`
-- `PAYMENT_CONFIRMED`
-- `ENROLLMENT_CANCELLED`
-- `PENDING_ENROLLMENT_EXPIRED`
-
-중요 원칙:
-
-- 상태 변경과 반드시 같이 성공해야 하는 정합성 작업은 이벤트로 분리하지 않는다.
 - `CourseStatusHistory`, `EnrollmentStatusHistory` 저장은 상태 변경과 같은 트랜잭션 안에서 직접 처리한다.
 - `Course.occupiedCount` 변경과 `ActiveEnrollment` 생성/삭제도 같은 트랜잭션 안에서 직접 처리한다.
-- 이벤트는 알림, 통계, 운영 로그, 후속 확장 같은 비핵심 반응에 사용한다.
+- 신청/결제/취소/만료 같은 핵심 비즈니스 흐름은 서비스 command 처리 지점에서 `*_PROCESSED` 로그로 명시적으로 남긴다. 정확한 감사 이력은 로그가 아니라 상태 이력 테이블을 기준으로 한다.
+- 사용하지 않는 공통 이벤트 wrapper나 listener는 제출 코드에 포함하지 않는다.
 
-이벤트 처리 phase:
+향후 알림/통계 같은 후속 반응이 생기면 `ApplicationEventPublisher`와 `@TransactionalEventListener(AFTER_COMMIT)` 기반으로 확장할 수 있다.
 
-- `AFTER_COMMIT`: 알림, 통계, 로그성 후속 처리처럼 핵심 상태 변경 성공 이후에 실행해도 되는 작업
-- `BEFORE_COMMIT`: 같은 트랜잭션에서 반드시 성공해야 하는 cross-domain cleanup에만 제한적으로 사용
-
-이번 과제에서는 필수 정합성 로직을 숨기지 않기 위해 `BEFORE_COMMIT` 이벤트 기반 필수 처리는 기본 설계에서 제외한다. 대신 서비스에서 명시적으로 처리한 뒤, `AFTER_COMMIT` 이벤트로 후속 확장 포인트를 제공한다.
-
-초기 구현 리스너는 최소화한다.
-
-- `EnrollmentEventLogger`: 신청/결제/취소/만료 이벤트 로그
-- `CourseEventLogger`: 자동/수동 OPEN, CLOSED 이벤트 로그
-
-향후 확장:
+향후 확장 후보:
 
 - 수강 신청 완료 알림
 - 결제 대기 만료 알림
@@ -1194,7 +1163,7 @@ Testcontainers MySQL에서 검증한다.
 - 활성 Enrollment 수와 `ActiveEnrollment` 수는 5
 - `occupiedCount`와 실제 활성 신청 수가 일치
 
-### 공통 응답/예외/이벤트
+### 공통 응답/예외/로깅
 
 - 성공 응답은 `CommonResponse.success(data)` 형식으로 반환
 - 실패 응답은 `code`, `message`, `traceId` 포함
@@ -1203,7 +1172,7 @@ Testcontainers MySQL에서 검증한다.
 - 예상하지 못한 예외는 내부 상세 없이 `INTERNAL_SERVER_ERROR` 반환
 - traceId가 MDC와 에러 응답에 포함
 - 핵심 상태 이력은 이벤트 리스너가 아니라 같은 트랜잭션에서 저장
-- 상태 변경 성공 후 `AFTER_COMMIT` 이벤트 리스너가 호출되는지 검증
+- HTTP 요청 요약 로그와 핵심 비즈니스 command 로그가 남는지 검증
 - Flyway migration이 Testcontainers MySQL에 정상 적용되는지 검증
 
 ## 16. README 작성 계획
@@ -1235,12 +1204,12 @@ README에는 과제 템플릿의 필수 항목을 모두 포함한다.
 - 스케줄러 지연에 대비해 API에서도 모집 기간을 검증하는 이유
 - 공통 응답과 에러 응답 형식
 - traceId 기반 로깅 정책
-- 일반 로그는 파일/콘솔에 남기고 DB에는 비즈니스 상태 이력만 저장하는 이유
+- 일반 로그는 console에 남기고 DB에는 비즈니스 상태 이력만 저장하는 이유
 - yml 설정과 `@ConfigurationProperties` 사용 방식
 - `Clock` 주입으로 시간 정책을 테스트 가능하게 만든 이유
 - Flyway로 DB schema와 제약/인덱스를 관리하는 이유
 - ShedLock으로 스케줄러 중복 실행을 방지하는 이유
-- 필수 정합성 로직은 직접 처리하고, 이벤트는 후속 확장에 사용하는 이유
+- 필수 정합성 로직은 직접 처리하고, 이벤트 골격은 후속 확장 전까지 제외한 이유
 - 삭제 API를 제외하고 상태 전이로 lifecycle을 표현하는 이유
 - waitlist를 후속 개선으로 둔 이유
 
@@ -1249,7 +1218,7 @@ README에는 과제 템플릿의 필수 항목을 모두 포함한다.
 구현 workflow에서는 작은 vertical slice로 나누어 진행한다.
 
 1. 프로젝트 스캐폴딩, MySQL/Testcontainers, Flyway, ShedLock 설정
-2. yml 설정, `@ConfigurationProperties`, `Clock`, 공통 응답, 에러 처리, traceId 로깅, 기본 이벤트 구조
+2. yml 설정, `@ConfigurationProperties`, `Clock`, 공통 응답, 에러 처리, traceId/요청 로깅
 3. User/Auth/Security/JWT
 4. Course 생성/조회/상태 전이/상태 이력
 5. Course 자동 공개/마감 스케줄러
@@ -1257,7 +1226,7 @@ README에는 과제 템플릿의 필수 항목을 모두 포함한다.
 7. 결제 확정/취소/상태 이력
 8. PENDING 만료 스케줄러
 9. 강의별 수강생 목록, 내 신청 목록, 페이지네이션
-10. 이벤트 로그 리스너, 동시성 테스트, README 정리
+10. 핵심 비즈니스 로그, 동시성 테스트, README 정리
 
 ## 18. 승인 후 진행
 

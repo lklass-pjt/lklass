@@ -15,12 +15,15 @@ import com.lklass.domain.user.entity.UserRole;
 import com.lklass.domain.user.exception.UserErrorCode;
 import com.lklass.domain.user.repository.UserRepository;
 import com.lklass.global.exception.BusinessException;
+import com.lklass.global.logging.AppLog;
 import com.lklass.global.security.AuthenticatedUser;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,6 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class CourseService {
+
+    private static final Logger log = LoggerFactory.getLogger(CourseService.class);
 
     private final CourseRepository courseRepository;
     private final CourseStatusHistoryRepository courseStatusHistoryRepository;
@@ -79,6 +84,14 @@ public class CourseService {
                 CourseStatusChangedBy.user(actor.userId())
         ));
 
+        AppLog.info(
+                log,
+                "COURSE_CREATE_PROCESSED",
+                "courseId={}, creatorId={}, actorId={}",
+                savedCourse.getId(),
+                savedCourse.getCreatorId(),
+                actor.userId()
+        );
         return CourseCreateResult.from(savedCourse);
     }
 
@@ -107,6 +120,7 @@ public class CourseService {
                 CourseStatusChangeReason.MANUAL_OPENED,
                 actor.userId()
         );
+        AppLog.info(log, "COURSE_OPEN_PROCESSED", "courseId={}, actorId={}", course.getId(), actor.userId());
     }
 
     @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
@@ -123,6 +137,7 @@ public class CourseService {
                 CourseStatusChangeReason.MANUAL_CLOSED,
                 actor.userId()
         );
+        AppLog.info(log, "COURSE_CLOSE_PROCESSED", "courseId={}, actorId={}", course.getId(), actor.userId());
     }
 
     @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
@@ -131,6 +146,7 @@ public class CourseService {
         Course course = getCourseEntity(courseId);
 
         course.reserveAutoPublish(LocalDateTime.now(clock));
+        AppLog.info(log, "COURSE_PUBLICATION_RESERVE_PROCESSED", "courseId={}", course.getId());
     }
 
     @Transactional

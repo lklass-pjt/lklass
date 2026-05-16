@@ -18,11 +18,14 @@ import com.lklass.domain.user.exception.UserErrorCode;
 import com.lklass.domain.user.repository.UserRepository;
 import com.lklass.global.config.properties.EnrollmentPolicyProperties;
 import com.lklass.global.exception.BusinessException;
+import com.lklass.global.logging.AppLog;
 import com.lklass.global.security.AuthenticatedUser;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -32,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class EnrollmentService {
+
+    private static final Logger log = LoggerFactory.getLogger(EnrollmentService.class);
 
     private final EnrollmentRepository enrollmentRepository;
     private final CourseRepository courseRepository;
@@ -66,6 +71,14 @@ public class EnrollmentService {
                 EnrollmentStatusChangedBy.user(actor.userId())
         ));
 
+        AppLog.info(
+                log,
+                "ENROLLMENT_APPLY_PROCESSED",
+                "enrollmentId={}, courseId={}, userId={}",
+                enrollment.getId(),
+                courseId,
+                actor.userId()
+        );
         return EnrollmentApplyResult.from(enrollment);
     }
 
@@ -89,6 +102,7 @@ public class EnrollmentService {
                 now,
                 EnrollmentStatusChangedBy.user(actor.userId())
         ));
+        AppLog.info(log, "PAYMENT_CONFIRM_PROCESSED", "enrollmentId={}, userId={}", enrollment.getId(), actor.userId());
     }
 
     @PreAuthorize("hasRole('STUDENT')")
@@ -109,6 +123,14 @@ public class EnrollmentService {
                 now,
                 EnrollmentStatusChangedBy.user(actor.userId())
         ));
+        AppLog.info(
+                log,
+                "ENROLLMENT_CANCEL_PROCESSED",
+                "enrollmentId={}, courseId={}, userId={}",
+                enrollment.getId(),
+                enrollment.getCourseId(),
+                actor.userId()
+        );
     }
 
     @PreAuthorize("hasRole('STUDENT')")

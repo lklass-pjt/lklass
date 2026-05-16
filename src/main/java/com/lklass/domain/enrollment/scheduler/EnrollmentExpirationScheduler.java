@@ -22,7 +22,7 @@ public class EnrollmentExpirationScheduler {
     public void expirePendingPayments() {
         int expiredCount = enrollmentService.expirePendingPayments();
         if (expiredCount > 0) {
-            AppLog.info(log, "PENDING_ENROLLMENT_EXPIRED", "count=" + expiredCount);
+            AppLog.info(log, "PENDING_ENROLLMENT_EXPIRED", "count={}", expiredCount);
         }
     }
 }
