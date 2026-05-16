@@ -263,6 +263,76 @@ class CourseEntityTest {
     }
 
     @Test
+    @DisplayName("Course는 DRAFT 상태에서 자동 게시 예약을 켤 수 있다")
+    void reserveAutoPublish() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        Course course = createCourse(1L);
+
+        // when
+        course.reserveAutoPublish(now);
+
+        // then
+        assertThat(course.isAutoPublishEnabled()).isTrue();
+        assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+    }
+
+    @Test
+    @DisplayName("Course는 DRAFT가 아니면 자동 게시 예약을 켤 수 없다")
+    void rejectAutoPublishReservationForNonDraftCourse() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        LocalDateTime manualEnrollmentEndAt = LocalDateTime.of(2026, 5, 30, 18, 0);
+        Course course = createCourse(1L);
+        course.openManually(now, manualEnrollmentEndAt);
+
+        // when & then
+        assertThatThrownBy(() -> course.reserveAutoPublish(now))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감이 지난 뒤에는 자동 게시 예약을 켤 수 없다")
+    void rejectAutoPublishReservationAfterEnrollmentClosed() {
+        // given
+        LocalDateTime now = ENROLLMENT_END_AT;
+        Course course = createCourse(1L);
+
+        // when & then
+        assertThatThrownBy(() -> course.reserveAutoPublish(now))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("Course는 모집 마감일이 수강 시작일 이전이 아니면 자동 게시 예약을 켤 수 없다")
+    void rejectAutoPublishReservationWithEnrollmentEndAtAfterCourseStartAt() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 5, 16, 10, 0);
+        Course course = Course.create(
+                1L,
+                "스프링 입문",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000.00"),
+                30,
+                ENROLLMENT_START_AT,
+                COURSE_START_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+
+        // when & then
+        assertThatThrownBy(() -> course.reserveAutoPublish(now))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.INVALID_ENROLLMENT_PERIOD)
+                );
+    }
+
+    @Test
     @DisplayName("Course는 DRAFT에서 바로 CLOSED로 변경할 수 없다")
     void rejectCloseDraftCourse() {
         // given

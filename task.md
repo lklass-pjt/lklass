@@ -109,7 +109,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 4
-- 상태: 진행 중
+- 상태: 완료
 - 전체 목표:
   - creator가 Course 생성
   - Course 목록 조회와 상태 필터
@@ -254,7 +254,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 5
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - 예약된 Course 자동 OPEN
   - 모집 마감 Course 자동 CLOSED
@@ -265,6 +265,26 @@ workflow: implement
   - Course 자동 상태 전환 스케줄러
   - scheduler properties
   - Clock 기반 테스트
+
+### Slice 6-A. Course 게시/모집 예약
+
+- 상태: 완료
+- 목표:
+  - creator/admin이 DRAFT Course를 자동 OPEN 대상에 포함하도록 예약
+  - DRAFT가 아닌 Course에는 자동 게시 예약 불가
+  - 모집 마감이 이미 지난 Course에는 자동 게시 예약 불가
+- 진행 내역:
+  - Course 자동 게시 예약 도메인 메서드 추가
+  - Course 게시 예약 service/API 추가
+  - Course 게시 예약 권한은 기존 Course 관리 권한과 동일하게 적용
+  - 리뷰 보강: 자동 게시 예약도 모집 마감일이 수강 시작일 이전인지 검증
+  - 테스트 워크플로우 보강: 게시 예약 service/API 성공, 권한, unknown Course, 상태/기간 실패 계약 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.*'` 통과
+  - `./gradlew test` 통과
 
 ## Slice 7. 수강 신청과 정원 확보
 

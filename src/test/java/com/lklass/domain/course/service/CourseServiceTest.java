@@ -603,6 +603,195 @@ class CourseServiceTest {
                 );
     }
 
+    @Test
+    @DisplayName("CREATOR는 본인 DRAFT Course에 자동 게시 예약을 설정할 수 있다")
+    void reserveCoursePublicationByCreator() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-creator@example.com",
+                "encoded-password",
+                "예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "예약 게시 대상 강의");
+
+        // when
+        courseService.reserveCoursePublication(createdCourse.id());
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.isAutoPublishEnabled()).isTrue();
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                });
+    }
+
+    @Test
+    @DisplayName("ADMIN은 다른 CREATOR의 DRAFT Course에 자동 게시 예약을 설정할 수 있다")
+    void reserveCoursePublicationByAdmin() {
+        // given
+        User admin = userRepository.save(User.create(
+                "reserve-admin@example.com",
+                "encoded-password",
+                "예약 관리자",
+                UserRole.ADMIN
+        ));
+        User creator = userRepository.save(User.create(
+                "reserve-admin-target@example.com",
+                "encoded-password",
+                "예약 대상 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser adminActor = authenticate(admin.getId(), UserRole.ADMIN);
+        CourseCreateResult createdCourse = createCourse(adminActor, creator.getId(), "관리자 예약 대상 강의");
+
+        // when
+        courseService.reserveCoursePublication(createdCourse.id());
+
+        // then
+        assertThat(courseRepository.findById(createdCourse.id()))
+                .hasValueSatisfying(course -> {
+                    assertThat(course.isAutoPublishEnabled()).isTrue();
+                    assertThat(course.getStatus()).isEqualTo(CourseStatus.DRAFT);
+                });
+    }
+
+    @Test
+    @DisplayName("OPEN Course에 자동 게시 예약을 설정하면 INVALID_COURSE_STATUS_TRANSITION 예외가 발생한다")
+    void rejectAutoPublishReservationForOpenCourse() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-open-creator@example.com",
+                "encoded-password",
+                "오픈 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(actor, null, "오픈 예약 실패 강의");
+        courseService.openCourse(actor, createdCourse.id(), MANUAL_ENROLLMENT_END_AT);
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode())
+                                .isEqualTo(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION)
+                );
+    }
+
+    @Test
+    @DisplayName("모집 마감이 지난 DRAFT Course에 자동 게시 예약을 설정하면 ENROLLMENT_CLOSED 예외가 발생한다")
+    void rejectAutoPublishReservationAfterEnrollmentClosed() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-closed-enrollment@example.com",
+                "encoded-password",
+                "마감 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = courseService.createCourse(
+                actor,
+                null,
+                "마감 지난 예약 실패 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                LocalDateTime.of(2026, 5, 1, 10, 0),
+                NOW,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.ENROLLMENT_CLOSED)
+                );
+    }
+
+    @Test
+    @DisplayName("모집 마감일이 수강 시작일 이전이 아닌 Course에 자동 게시 예약을 설정하면 INVALID_ENROLLMENT_PERIOD 예외가 발생한다")
+    void rejectAutoPublishReservationWithInvalidEnrollmentPeriod() {
+        // given
+        User creator = userRepository.save(User.create(
+                "reserve-invalid-period-creator@example.com",
+                "encoded-password",
+                "기간 오류 예약 크리에이터",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser actor = authenticate(creator.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = courseService.createCourse(
+                actor,
+                null,
+                "기간 오류 예약 실패 강의",
+                "스프링 부트와 JPA 기초 강의",
+                new BigDecimal("10000"),
+                30,
+                ENROLLMENT_START_AT,
+                COURSE_START_AT,
+                COURSE_START_AT,
+                COURSE_END_AT
+        );
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.INVALID_ENROLLMENT_PERIOD)
+                );
+    }
+
+    @Test
+    @DisplayName("CREATOR는 다른 CREATOR의 Course에 자동 게시 예약을 설정할 수 없다")
+    void rejectAutoPublishReservationForOtherCreatorCourse() {
+        // given
+        User owner = userRepository.save(User.create(
+                "reserve-owner@example.com",
+                "encoded-password",
+                "예약 소유자",
+                UserRole.CREATOR
+        ));
+        User otherCreator = userRepository.save(User.create(
+                "reserve-other@example.com",
+                "encoded-password",
+                "예약 타인",
+                UserRole.CREATOR
+        ));
+        AuthenticatedUser ownerActor = authenticate(owner.getId(), UserRole.CREATOR);
+        CourseCreateResult createdCourse = createCourse(ownerActor, null, "타인 예약 실패 강의");
+        authenticate(otherCreator.getId(), UserRole.CREATOR);
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(createdCourse.id()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("CREATOR는 존재하지 않는 Course 게시 예약을 요청해도 소유 확인에서 차단된다")
+    void rejectCreatorToReserveUnknownCoursePublication() {
+        // given
+        authenticate(1L, UserRole.CREATOR);
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(unknownCourseId))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("ADMIN의 존재하지 않는 Course 게시 예약은 COURSE_NOT_FOUND 예외가 발생한다")
+    void rejectUnknownCoursePublicationReservationByAdmin() {
+        // given
+        authenticate(99L, UserRole.ADMIN);
+        Long unknownCourseId = 999_999L;
+
+        // when & then
+        assertThatThrownBy(() -> courseService.reserveCoursePublication(unknownCourseId))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(CourseErrorCode.COURSE_NOT_FOUND)
+                );
+    }
+
     private CourseCreateResult createCourse(AuthenticatedUser actor, Long requestedCreatorId, String title) {
         return courseService.createCourse(
                 actor,

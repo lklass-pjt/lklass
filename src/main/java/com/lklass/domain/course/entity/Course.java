@@ -128,9 +128,7 @@ public class Course extends BaseTimeEntity {
                 .isBefore(Objects.requireNonNull(enrollmentEndAt, "enrollmentEndAt must not be null"))) {
             throw new BusinessException(CourseErrorCode.ENROLLMENT_CLOSED);
         }
-        if (!enrollmentEndAt.isBefore(coursePeriod.getStartAt())) {
-            throw new BusinessException(CourseErrorCode.INVALID_ENROLLMENT_PERIOD);
-        }
+        validateEnrollmentEndsBeforeCourseStarts(enrollmentEndAt);
         enrollmentPeriod = CoursePeriod.enrollment(now, enrollmentEndAt);
         status = CourseStatus.OPEN;
     }
@@ -140,6 +138,24 @@ public class Course extends BaseTimeEntity {
             throw new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION);
         }
         status = CourseStatus.CLOSED;
+    }
+
+    public void reserveAutoPublish(LocalDateTime now) {
+        if (status != CourseStatus.DRAFT) {
+            throw new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION);
+        }
+        // 예약 게시를 켜더라도 모집 마감이 이미 지난 Course는 스케줄러 대상이 되지 않도록 방어한다.
+        if (!Objects.requireNonNull(now, "now must not be null").isBefore(enrollmentPeriod.getEndAt())) {
+            throw new BusinessException(CourseErrorCode.ENROLLMENT_CLOSED);
+        }
+        validateEnrollmentEndsBeforeCourseStarts(enrollmentPeriod.getEndAt());
+        autoPublishEnabled = true;
+    }
+
+    private void validateEnrollmentEndsBeforeCourseStarts(LocalDateTime enrollmentEndAt) {
+        if (!enrollmentEndAt.isBefore(coursePeriod.getStartAt())) {
+            throw new BusinessException(CourseErrorCode.INVALID_ENROLLMENT_PERIOD);
+        }
     }
 
     private static String requireNotBlank(String value, String fieldName) {

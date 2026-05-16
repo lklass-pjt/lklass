@@ -124,6 +124,14 @@ public class CourseService {
         );
     }
 
+    @PreAuthorize("@coursePermission.canManageCourse(authentication, #courseId)")
+    @Transactional
+    public void reserveCoursePublication(Long courseId) {
+        Course course = getCourseEntity(courseId);
+
+        course.reserveAutoPublish(LocalDateTime.now(clock));
+    }
+
     private Long resolveCreatorId(AuthenticatedUser actor, Long requestedCreatorId) {
         if (actor.role() == UserRole.ADMIN) {
             return requestedCreatorId;
