@@ -360,7 +360,7 @@ workflow: implement
 
 - 유형: HITL
 - 선행 조건: Slice 5
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - OPEN Course의 모집 기간 내 수강 신청 성공
   - DRAFT/CLOSED/모집 전/모집 마감 Course 신청 거부
@@ -373,6 +373,30 @@ workflow: implement
   - EnrollmentStatusHistory
   - Course repository의 atomic conditional update
   - Enrollment service/controller/DTO
+
+### Slice 7-A. Enrollment 엔티티와 스키마
+
+- 상태: 완료
+- 목표:
+  - 수강 신청 상태 `PENDING -> CONFIRMED -> CANCELLED`를 저장할 기본 모델 준비
+  - MySQL에서 partial unique index 대신 `active_enrollments` 테이블로 활성 신청 중복 방지 준비
+  - 수강 신청 상태 이력을 append-only로 저장할 테이블 준비
+- 완료 내역:
+  - Enrollment, ActiveEnrollment, EnrollmentStatusHistory 엔티티 추가
+  - EnrollmentStatus, EnrollmentStatusChangeReason, EnrollmentStatusChangedBy 추가
+  - enrollments, active_enrollments, enrollment_status_histories Flyway migration 추가
+  - ActiveEnrollment `(course_id, user_id)` unique 제약으로 같은 Course/User의 활성 신청 중복 방지
+- 현재 검증 가능 항목:
+  - Enrollment 저장 시 기본 상태 `PENDING`
+  - ActiveEnrollment unique 제약으로 중복 활성 신청 거부
+  - EnrollmentStatusHistory 변경 사유와 변경 주체 저장
+  - ActiveEnrollment unique 제약 범위와 Enrollment 단일 점유 제약 검증
+  - EnrollmentStatusHistory SYSTEM 변경 주체 저장 검증
+  - 수강 신청 기본 테이블 Flyway 생성 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.enrollment.entity.EnrollmentPersistenceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
 
 ## Slice 8. 결제 확정과 취소
 
