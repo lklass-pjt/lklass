@@ -1,0 +1,15 @@
+spring:
+  task:
+    scheduling:
+      enabled: false
+
+lklass:
+  jwt:
+    secret: ${JWT_SECRET:local-dev-secret-change-me-32bytes-minimum}
+    access-token-ttl: 1h
+  policy:
+    pending-payment-ttl: 30m
+    cancellation-period: 7d
+  scheduler:
+    course-status-cron: "0 * * * * *"
+    pending-expiration-cron: "0 * * * * *"

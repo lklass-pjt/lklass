@@ -3,6 +3,8 @@ package com.lklass.domain.course.repository;
 import com.lklass.domain.course.dto.CourseQueryResult;
 import com.lklass.domain.course.entity.Course;
 import com.lklass.domain.course.entity.CourseStatus;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -68,4 +70,23 @@ public interface CourseJpaRepository extends JpaRepository<Course, Long> {
     Optional<CourseQueryResult> findCourseResultById(@Param("courseId") Long courseId);
 
     boolean existsByIdAndCreatorId(Long id, Long creatorId);
+
+    @Query("""
+            select c
+              from Course c
+             where c.status = com.lklass.domain.course.entity.CourseStatus.DRAFT
+               and c.autoPublishEnabled = true
+               and c.enrollmentPeriod.startAt <= :now
+               and :now < c.enrollmentPeriod.endAt
+               and c.enrollmentPeriod.endAt < c.coursePeriod.startAt
+            """)
+    List<Course> findAutoOpenTargets(@Param("now") LocalDateTime now);
+
+    @Query("""
+            select c
+              from Course c
+             where c.status = com.lklass.domain.course.entity.CourseStatus.OPEN
+               and c.enrollmentPeriod.endAt <= :now
+            """)
+    List<Course> findAutoCloseTargets(@Param("now") LocalDateTime now);
 }

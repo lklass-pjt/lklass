@@ -131,6 +131,7 @@ public class Course extends BaseTimeEntity {
         validateEnrollmentEndsBeforeCourseStarts(enrollmentEndAt);
         enrollmentPeriod = CoursePeriod.enrollment(now, enrollmentEndAt);
         status = CourseStatus.OPEN;
+        autoPublishEnabled = false;
     }
 
     public void close() {
@@ -150,6 +151,30 @@ public class Course extends BaseTimeEntity {
         }
         validateEnrollmentEndsBeforeCourseStarts(enrollmentPeriod.getEndAt());
         autoPublishEnabled = true;
+    }
+
+    public void openAutomatically(LocalDateTime now) {
+        if (status != CourseStatus.DRAFT || !autoPublishEnabled) {
+            throw new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION);
+        }
+        LocalDateTime checkedNow = Objects.requireNonNull(now, "now must not be null");
+        if (checkedNow.isBefore(enrollmentPeriod.getStartAt()) || !checkedNow.isBefore(enrollmentPeriod.getEndAt())) {
+            throw new BusinessException(CourseErrorCode.ENROLLMENT_CLOSED);
+        }
+        validateEnrollmentEndsBeforeCourseStarts(enrollmentPeriod.getEndAt());
+        status = CourseStatus.OPEN;
+        autoPublishEnabled = false;
+    }
+
+    public void closeAutomatically(LocalDateTime now) {
+        if (status != CourseStatus.OPEN) {
+            throw new BusinessException(CourseErrorCode.INVALID_COURSE_STATUS_TRANSITION);
+        }
+        if (Objects.requireNonNull(now, "now must not be null").isBefore(enrollmentPeriod.getEndAt())) {
+            throw new BusinessException(CourseErrorCode.ENROLLMENT_CLOSED);
+        }
+        status = CourseStatus.CLOSED;
+        autoPublishEnabled = false;
     }
 
     private void validateEnrollmentEndsBeforeCourseStarts(LocalDateTime enrollmentEndAt) {
