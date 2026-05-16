@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import lombok.AccessLevel;
@@ -64,5 +65,28 @@ public class Enrollment extends BaseTimeEntity {
         }
         this.status = EnrollmentStatus.CONFIRMED;
         this.confirmedAt = confirmedAt;
+    }
+
+    public void cancel(LocalDateTime cancelledAt, Duration cancellationPeriod) {
+        LocalDateTime checkedCancelledAt = Objects.requireNonNull(cancelledAt, "cancelledAt must not be null");
+        Duration checkedCancellationPeriod = Objects.requireNonNull(cancellationPeriod, "cancellationPeriod must not be null");
+
+        if (status == EnrollmentStatus.PENDING) {
+            cancelAt(checkedCancelledAt);
+            return;
+        }
+        if (status == EnrollmentStatus.CONFIRMED) {
+            if (checkedCancelledAt.isAfter(confirmedAt.plus(checkedCancellationPeriod))) {
+                throw new BusinessException(EnrollmentErrorCode.CANCELLATION_PERIOD_EXPIRED);
+            }
+            cancelAt(checkedCancelledAt);
+            return;
+        }
+        throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
+    }
+
+    private void cancelAt(LocalDateTime cancelledAt) {
+        this.status = EnrollmentStatus.CANCELLED;
+        this.cancelledAt = cancelledAt;
     }
 }

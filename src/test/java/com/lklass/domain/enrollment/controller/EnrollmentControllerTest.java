@@ -209,6 +209,113 @@ class EnrollmentControllerTest {
         verify(enrollmentService, never()).apply(any(), any());
     }
 
+    @Test
+    @DisplayName("결제 확정 API는 인증된 STUDENT 요청이면 성공 응답을 반환한다")
+    void confirmPayment() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+
+        // when & then
+        mockMvc.perform(post("/api/enrollments/1/confirm-payment")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        verify(enrollmentService).confirmPayment(any(AuthenticatedUser.class), eq(1L));
+    }
+
+    @Test
+    @DisplayName("결제 확정 API는 인증이 없으면 401 공통 실패 응답을 반환한다")
+    void rejectUnauthenticatedPaymentConfirmation() throws Exception {
+        // when & then
+        mockMvc.perform(post("/api/enrollments/1/confirm-payment"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(GlobalErrorCode.UNAUTHORIZED.code()));
+        verify(enrollmentService, never()).confirmPayment(any(), any());
+    }
+
+    @Test
+    @DisplayName("결제 확정 API는 신청이 없으면 404 공통 실패 응답을 반환한다")
+    void rejectUnknownEnrollmentPaymentConfirmation() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+        doThrow(new BusinessException(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND))
+                .when(enrollmentService)
+                .confirmPayment(any(AuthenticatedUser.class), eq(999_999L));
+
+        // when & then
+        mockMvc.perform(post("/api/enrollments/999999/confirm-payment")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND.code()));
+    }
+
+    @Test
+    @DisplayName("결제 확정 API는 잘못된 신청 상태이면 400 공통 실패 응답을 반환한다")
+    void rejectInvalidEnrollmentStatusOnPaymentConfirmation() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+        doThrow(new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS))
+                .when(enrollmentService)
+                .confirmPayment(any(AuthenticatedUser.class), eq(1L));
+
+        // when & then
+        mockMvc.perform(post("/api/enrollments/1/confirm-payment")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS.code()));
+    }
+
+    @Test
+    @DisplayName("수강 취소 API는 인증된 STUDENT 요청이면 성공 응답을 반환한다")
+    void cancelEnrollment() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+
+        // when & then
+        mockMvc.perform(post("/api/enrollments/1/cancel")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        verify(enrollmentService).cancel(any(AuthenticatedUser.class), eq(1L));
+    }
+
+    @Test
+    @DisplayName("수강 취소 API는 신청이 없으면 404 공통 실패 응답을 반환한다")
+    void rejectUnknownEnrollmentCancellation() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+        doThrow(new BusinessException(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND))
+                .when(enrollmentService)
+                .cancel(any(AuthenticatedUser.class), eq(999_999L));
+
+        // when & then
+        mockMvc.perform(post("/api/enrollments/999999/cancel")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND.code()));
+    }
+
+    @Test
+    @DisplayName("수강 취소 API는 취소 가능 기간이 지나면 400 공통 실패 응답을 반환한다")
+    void rejectExpiredCancellationPeriod() throws Exception {
+        // given
+        mockToken("student-token", 3L, UserRole.STUDENT);
+        doThrow(new BusinessException(EnrollmentErrorCode.CANCELLATION_PERIOD_EXPIRED))
+                .when(enrollmentService)
+                .cancel(any(AuthenticatedUser.class), eq(1L));
+
+        // when & then
+        mockMvc.perform(post("/api/enrollments/1/cancel")
+                        .header("Authorization", "Bearer student-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(EnrollmentErrorCode.CANCELLATION_PERIOD_EXPIRED.code()));
+    }
+
     private void mockToken(String token, Long userId, UserRole role) {
         when(jwtTokenProvider.getUserId(token)).thenReturn(userId);
         when(jwtTokenProvider.getRole(token)).thenReturn(role);

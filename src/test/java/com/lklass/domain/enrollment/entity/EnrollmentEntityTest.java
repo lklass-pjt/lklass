@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.lklass.domain.enrollment.exception.EnrollmentErrorCode;
 import com.lklass.global.exception.BusinessException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,5 +59,68 @@ class EnrollmentEntityTest {
                 );
         assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
         assertThat(enrollment.getConfirmedAt()).isEqualTo(CONFIRMED_AT);
+    }
+
+    @Test
+    @DisplayName("PENDING 신청을 cancel하면 CANCELLED 상태와 취소 시각을 저장한다")
+    void cancelPendingEnrollment() {
+        // given
+        Enrollment enrollment = Enrollment.create(1L, 2L, ENROLLED_AT);
+        LocalDateTime cancelledAt = ENROLLED_AT.plusMinutes(10);
+
+        // when
+        enrollment.cancel(cancelledAt, Duration.ofDays(7));
+
+        // then
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+        assertThat(enrollment.getCancelledAt()).isEqualTo(cancelledAt);
+        assertThat(enrollment.getConfirmedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("CONFIRMED 신청을 결제 후 7일 이내 cancel하면 CANCELLED 상태와 취소 시각을 저장한다")
+    void cancelConfirmedEnrollmentWithinCancellationPeriod() {
+        // given
+        Enrollment enrollment = Enrollment.create(1L, 2L, ENROLLED_AT);
+        enrollment.confirm(CONFIRMED_AT);
+        LocalDateTime cancelledAt = CONFIRMED_AT.plusDays(7);
+
+        // when
+        enrollment.cancel(cancelledAt, Duration.ofDays(7));
+
+        // then
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+        assertThat(enrollment.getConfirmedAt()).isEqualTo(CONFIRMED_AT);
+        assertThat(enrollment.getCancelledAt()).isEqualTo(cancelledAt);
+    }
+
+    @Test
+    @DisplayName("CONFIRMED 신청을 결제 후 7일이 지나 cancel하면 CANCELLATION_PERIOD_EXPIRED 예외가 발생한다")
+    void rejectConfirmedEnrollmentCancellationAfterCancellationPeriod() {
+        // given
+        Enrollment enrollment = Enrollment.create(1L, 2L, ENROLLED_AT);
+        enrollment.confirm(CONFIRMED_AT);
+
+        // when & then
+        assertThatThrownBy(() -> enrollment.cancel(CONFIRMED_AT.plusDays(7).plusNanos(1), Duration.ofDays(7)))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(EnrollmentErrorCode.CANCELLATION_PERIOD_EXPIRED)
+                );
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
+        assertThat(enrollment.getCancelledAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("이미 CANCELLED 상태인 신청을 다시 cancel하면 INVALID_ENROLLMENT_STATUS 예외가 발생한다")
+    void rejectAlreadyCancelledEnrollment() {
+        // given
+        Enrollment enrollment = Enrollment.create(1L, 2L, ENROLLED_AT);
+        enrollment.cancel(ENROLLED_AT.plusMinutes(10), Duration.ofDays(7));
+
+        // when & then
+        assertThatThrownBy(() -> enrollment.cancel(ENROLLED_AT.plusMinutes(20), Duration.ofDays(7)))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS)
+                );
     }
 }

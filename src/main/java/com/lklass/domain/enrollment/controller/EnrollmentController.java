@@ -14,17 +14,35 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/courses/{courseId}/enrollments")
+@RequestMapping("/api")
 public class EnrollmentController {
 
     private final EnrollmentService enrollmentService;
 
-    @PostMapping
+    @PostMapping("/courses/{courseId}/enrollments")
     public CommonResponse<EnrollmentApplyResponse> applyEnrollment(
             @AuthenticationPrincipal AuthenticatedUser actor,
             @PathVariable Long courseId
     ) {
         EnrollmentApplyResult result = enrollmentService.apply(actor, courseId);
         return CommonResponse.success(EnrollmentApplyResponse.from(result));
+    }
+
+    @PostMapping("/enrollments/{enrollmentId}/confirm-payment")
+    public CommonResponse<Void> confirmPayment(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @PathVariable Long enrollmentId
+    ) {
+        enrollmentService.confirmPayment(actor, enrollmentId);
+        return CommonResponse.success();
+    }
+
+    @PostMapping("/enrollments/{enrollmentId}/cancel")
+    public CommonResponse<Void> cancelEnrollment(
+            @AuthenticationPrincipal AuthenticatedUser actor,
+            @PathVariable Long enrollmentId
+    ) {
+        enrollmentService.cancel(actor, enrollmentId);
+        return CommonResponse.success();
     }
 }

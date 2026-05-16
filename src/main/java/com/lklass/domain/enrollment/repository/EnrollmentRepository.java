@@ -50,6 +50,10 @@ public class EnrollmentRepository {
         return activeEnrollmentJpaRepository.existsByCourseIdAndUserId(courseId, userId);
     }
 
+    public boolean deleteActiveEnrollment(Long enrollmentId) {
+        return activeEnrollmentJpaRepository.deleteByEnrollment_Id(enrollmentId) == 1;
+    }
+
     public List<EnrollmentStatusHistory> findStatusHistories(Long enrollmentId) {
         return enrollmentStatusHistoryJpaRepository.findAllByEnrollment_IdOrderByChangedAtAsc(enrollmentId);
     }

@@ -188,6 +188,132 @@ class EnrollmentServiceTest {
     }
 
     @Test
+    @DisplayName("PENDING 신청을 취소하면 CANCELLED 상태가 되고 활성 신청과 좌석 점유가 해제된다")
+    void cancelPendingEnrollment() {
+        // given
+        User student = saveUser("student-cancel-pending@example.com", UserRole.STUDENT);
+        Course course = saveOpenCourse(2);
+        AuthenticatedUser actor = authenticate(student);
+        EnrollmentApplyResult applied = enrollmentService.apply(actor, course.getId());
+
+        // when
+        enrollmentService.cancel(actor, applied.id());
+
+        // then
+        Enrollment found = enrollmentRepository.findById(applied.id()).orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+        assertThat(found.getCancelledAt()).isEqualTo(NOW);
+        assertThat(found.getConfirmedAt()).isNull();
+        assertThat(enrollmentRepository.existsActiveEnrollment(course.getId(), student.getId())).isFalse();
+        assertThat(courseRepository.findById(course.getId())).hasValueSatisfying(foundCourse ->
+                assertThat(foundCourse.getOccupiedCount()).isZero()
+        );
+        assertThat(enrollmentRepository.findStatusHistories(applied.id()))
+                .extracting(history -> history.getReason())
+                .containsExactly(
+                        EnrollmentStatusChangeReason.CREATED,
+                        EnrollmentStatusChangeReason.CANCELLED
+                );
+    }
+
+    @Test
+    @DisplayName("CONFIRMED 신청을 결제 후 7일 이내 취소하면 좌석과 활성 신청이 해제된다")
+    void cancelConfirmedEnrollmentWithinCancellationPeriod() {
+        // given
+        User student = saveUser("student-cancel-confirmed@example.com", UserRole.STUDENT);
+        Course course = saveOpenCourse(2);
+        AuthenticatedUser actor = authenticate(student);
+        EnrollmentApplyResult applied = enrollmentService.apply(actor, course.getId());
+        enrollmentService.confirmPayment(actor, applied.id());
+
+        // when
+        enrollmentService.cancel(actor, applied.id());
+
+        // then
+        Enrollment found = enrollmentRepository.findById(applied.id()).orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+        assertThat(found.getConfirmedAt()).isEqualTo(NOW);
+        assertThat(found.getCancelledAt()).isEqualTo(NOW);
+        assertThat(enrollmentRepository.existsActiveEnrollment(course.getId(), student.getId())).isFalse();
+        assertThat(courseRepository.findById(course.getId())).hasValueSatisfying(foundCourse ->
+                assertThat(foundCourse.getOccupiedCount()).isZero()
+        );
+        assertThat(enrollmentRepository.findStatusHistories(applied.id()).getLast())
+                .satisfies(history -> {
+                    assertThat(history.getFromStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
+                    assertThat(history.getToStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+                    assertThat(history.getReason()).isEqualTo(EnrollmentStatusChangeReason.CANCELLED);
+                    assertThat(history.getChangedBy()).isEqualTo(EnrollmentStatusChangedBy.user(student.getId()));
+                });
+    }
+
+    @Test
+    @DisplayName("CONFIRMED 신청의 결제 확정일이 7일을 지나면 취소할 수 없다")
+    void rejectConfirmedEnrollmentCancellationAfterCancellationPeriod() {
+        // given
+        User student = saveUser("student-cancel-expired@example.com", UserRole.STUDENT);
+        Course course = saveOpenCourse(2);
+        AuthenticatedUser actor = authenticate(student);
+        EnrollmentApplyResult applied = enrollmentService.apply(actor, course.getId());
+        enrollmentService.confirmPayment(actor, applied.id());
+        Enrollment enrollment = enrollmentRepository.findById(applied.id()).orElseThrow();
+        ReflectionTestUtils.setField(enrollment, "confirmedAt", NOW.minusDays(8));
+        enrollmentRepository.save(enrollment);
+
+        // when & then
+        assertThatThrownBy(() -> enrollmentService.cancel(actor, applied.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(EnrollmentErrorCode.CANCELLATION_PERIOD_EXPIRED)
+                );
+        Enrollment found = enrollmentRepository.findById(applied.id()).orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(EnrollmentStatus.CONFIRMED);
+        assertThat(found.getCancelledAt()).isNull();
+        assertThat(enrollmentRepository.existsActiveEnrollment(course.getId(), student.getId())).isTrue();
+        assertThat(courseRepository.findById(course.getId())).hasValueSatisfying(foundCourse ->
+                assertThat(foundCourse.getOccupiedCount()).isEqualTo(1)
+        );
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 신청을 취소하면 존재 여부를 숨기기 위해 ENROLLMENT_NOT_FOUND 예외가 발생한다")
+    void rejectOtherUsersEnrollmentCancellation() {
+        // given
+        User owner = saveUser("student-cancel-owner@example.com", UserRole.STUDENT);
+        User otherStudent = saveUser("student-cancel-other@example.com", UserRole.STUDENT);
+        Course course = saveOpenCourse(2);
+        EnrollmentApplyResult applied = enrollmentService.apply(authenticate(owner), course.getId());
+        AuthenticatedUser actor = authenticate(otherStudent);
+
+        // when & then
+        assertThatThrownBy(() -> enrollmentService.cancel(actor, applied.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND)
+                );
+        assertThat(enrollmentRepository.findById(applied.id()).orElseThrow().getStatus())
+                .isEqualTo(EnrollmentStatus.PENDING);
+    }
+
+    @Test
+    @DisplayName("이미 CANCELLED 상태인 신청을 다시 취소하면 INVALID_ENROLLMENT_STATUS 예외가 발생한다")
+    void rejectAlreadyCancelledEnrollmentCancellation() {
+        // given
+        User student = saveUser("student-cancel-again@example.com", UserRole.STUDENT);
+        Course course = saveOpenCourse(2);
+        AuthenticatedUser actor = authenticate(student);
+        EnrollmentApplyResult applied = enrollmentService.apply(actor, course.getId());
+        enrollmentService.cancel(actor, applied.id());
+
+        // when & then
+        assertThatThrownBy(() -> enrollmentService.cancel(actor, applied.id()))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS)
+                );
+        assertThat(courseRepository.findById(course.getId())).hasValueSatisfying(foundCourse ->
+                assertThat(foundCourse.getOccupiedCount()).isZero()
+        );
+    }
+
+    @Test
     @DisplayName("서로 다른 STUDENT가 같은 Course에 신청하면 각자 활성 신청이 생성되고 좌석 수가 누적 증가한다")
     void applyEnrollmentByDifferentStudentsInSameCourse() {
         // given
