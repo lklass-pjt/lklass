@@ -360,7 +360,7 @@ workflow: implement
 
 - 유형: HITL
 - 선행 조건: Slice 5
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - OPEN Course의 모집 기간 내 수강 신청 성공
   - DRAFT/CLOSED/모집 전/모집 마감 Course 신청 거부
@@ -373,6 +373,107 @@ workflow: implement
   - EnrollmentStatusHistory
   - Course repository의 atomic conditional update
   - Enrollment service/controller/DTO
+
+### Slice 7-A. Enrollment 엔티티와 스키마
+
+- 상태: 완료
+- 목표:
+  - 수강 신청 상태 `PENDING -> CONFIRMED -> CANCELLED`를 저장할 기본 모델 준비
+  - MySQL에서 partial unique index 대신 `active_enrollments` 테이블로 활성 신청 중복 방지 준비
+  - 수강 신청 상태 이력을 append-only로 저장할 테이블 준비
+- 완료 내역:
+  - Enrollment, ActiveEnrollment, EnrollmentStatusHistory 엔티티 추가
+  - EnrollmentStatus, EnrollmentStatusChangeReason, EnrollmentStatusChangedBy 추가
+  - enrollments, active_enrollments, enrollment_status_histories Flyway migration 추가
+  - ActiveEnrollment `(course_id, user_id)` unique 제약으로 같은 Course/User의 활성 신청 중복 방지
+- 현재 검증 가능 항목:
+  - Enrollment 저장 시 기본 상태 `PENDING`
+  - ActiveEnrollment unique 제약으로 중복 활성 신청 거부
+  - EnrollmentStatusHistory 변경 사유와 변경 주체 저장
+  - ActiveEnrollment unique 제약 범위와 Enrollment 단일 점유 제약 검증
+  - EnrollmentStatusHistory SYSTEM 변경 주체 저장 검증
+  - 수강 신청 기본 테이블 Flyway 생성 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.enrollment.entity.EnrollmentPersistenceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 7-B. Course 정원 원자성 update
+
+- 상태: 완료
+- 목표:
+  - 수강 신청 트랜잭션에서 사용할 Course 좌석 확보/반납 연산 준비
+  - 정원 초과 여부를 단일 조건부 update 결과로 판단할 수 있게 함
+- 완료 내역:
+  - CourseJpaRepository에 `tryOccupySeat`, `releaseSeat` 조건부 원자성 update 추가
+  - CourseRepository wrapper에 boolean 반환 메서드 추가
+  - OPEN/모집 기간/정원 조건과 좌석 반납 동작을 Testcontainers MySQL로 검증
+- 현재 검증 가능 항목:
+  - 정원이 남은 OPEN Course 좌석 확보 성공
+  - 정원이 찬 Course 좌석 확보 실패
+  - DRAFT 또는 모집 마감 Course 좌석 확보 실패
+  - 좌석 반납 성공 및 0 미만 감소 방지
+  - 모집 시작 전/CLOSED/없는 Course 좌석 확보 실패
+  - 좌석 확보 누적 증가 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.repository.CourseCapacityRepositoryTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.repository.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 7-C. 수강 신청 서비스 use case
+
+- 상태: 완료
+- 목표:
+  - STUDENT가 OPEN Course에 수강 신청하면 좌석을 확보하고 PENDING 신청을 생성
+  - 활성 중복 신청과 정원 초과를 명확한 비즈니스 예외로 변환
+  - 수강 신청 생성 이력을 같은 트랜잭션에서 저장
+- 완료 내역:
+  - Enrollment/ActiveEnrollment/EnrollmentStatusHistory repository 추가
+  - EnrollmentRepository wrapper에서 ActiveEnrollment unique 충돌을 `ALREADY_ENROLLED`로 변환
+  - EnrollmentService 신청 use case 추가
+  - EnrollmentApplyResult DTO 추가
+  - EnrollmentErrorCode 추가
+- 현재 검증 가능 항목:
+  - STUDENT 신청 성공 시 `occupiedCount` 증가, Enrollment/ActiveEnrollment/History 저장
+  - STUDENT가 아닌 사용자의 신청 권한 거부
+  - 같은 Course/User 활성 중복 신청 거부
+  - 정원 초과 신청 거부
+  - DRAFT Course 신청 거부
+  - CLOSED/모집 전/모집 마감 Course 신청 거부
+  - 존재하지 않는 Course 신청 거부
+  - 존재하지 않는 사용자 신청 거부
+  - 같은 Course에 서로 다른 STUDENT 신청 시 `occupiedCount` 누적 증가
+- 검증:
+  - 테스트 워크플로우 보강: 수강 신청 서비스의 상태/기간/사용자 존재성/복수 학생 경계 테스트 추가
+  - `./gradlew test --tests com.lklass.domain.enrollment.service.EnrollmentServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
+
+### Slice 7-D. 수강 신청 API
+
+- 상태: 완료
+- 목표:
+  - 수강 신청 service use case를 HTTP API로 노출
+  - 수강 신청 성공/실패 API 응답 계약 고정
+- 완료 내역:
+  - `POST /api/courses/{courseId}/enrollments` API 추가
+  - EnrollmentApplyResponse DTO 추가
+  - EnrollmentController WebMvcTest 추가
+- 현재 검증 가능 항목:
+  - 인증된 STUDENT 수강 신청 성공 응답
+  - 미인증 요청 401 응답
+  - 권한 없는 요청 403 응답
+  - 활성 중복 신청 409 응답
+  - 정원 초과 409 응답
+  - 신청 불가 Course 400 응답
+  - 존재하지 않는 Course 404 응답
+  - 존재하지 않는 사용자 404 응답
+  - 잘못된 `courseId` path variable 400 validation 응답
+- 검증:
+  - 테스트 워크플로우 보강: 사용자 없음 404와 잘못된 `courseId` 400 API 계약 추가
+  - `./gradlew test --tests com.lklass.domain.enrollment.controller.EnrollmentControllerTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
 
 ## Slice 8. 결제 확정과 취소
 

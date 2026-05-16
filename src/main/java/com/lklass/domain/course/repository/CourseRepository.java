@@ -44,4 +44,12 @@ public class CourseRepository {
     public List<Course> findAutoCloseTargets(LocalDateTime now) {
         return courseJpaRepository.findAutoCloseTargets(now);
     }
+
+    public boolean tryOccupySeat(Long courseId, LocalDateTime now) {
+        return courseJpaRepository.tryOccupySeat(courseId, now) == 1;
+    }
+
+    public boolean releaseSeat(Long courseId) {
+        return courseJpaRepository.releaseSeat(courseId) == 1;
+    }
 }

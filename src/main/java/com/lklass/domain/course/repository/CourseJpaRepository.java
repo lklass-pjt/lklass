@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -89,4 +90,25 @@ public interface CourseJpaRepository extends JpaRepository<Course, Long> {
                and c.enrollmentPeriod.endAt <= :now
             """)
     List<Course> findAutoCloseTargets(@Param("now") LocalDateTime now);
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update Course c
+               set c.occupiedCount = c.occupiedCount + 1
+             where c.id = :courseId
+               and c.status = com.lklass.domain.course.entity.CourseStatus.OPEN
+               and c.enrollmentPeriod.startAt <= :now
+               and :now < c.enrollmentPeriod.endAt
+               and c.occupiedCount < c.capacity.value
+            """)
+    int tryOccupySeat(@Param("courseId") Long courseId, @Param("now") LocalDateTime now);
+
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            update Course c
+               set c.occupiedCount = c.occupiedCount - 1
+             where c.id = :courseId
+               and c.occupiedCount > 0
+            """)
+    int releaseSeat(@Param("courseId") Long courseId);
 }
