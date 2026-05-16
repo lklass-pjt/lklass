@@ -398,6 +398,28 @@ workflow: implement
   - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
   - `./gradlew test` 통과
 
+### Slice 7-B. Course 정원 원자성 update
+
+- 상태: 완료
+- 목표:
+  - 수강 신청 트랜잭션에서 사용할 Course 좌석 확보/반납 연산 준비
+  - 정원 초과 여부를 단일 조건부 update 결과로 판단할 수 있게 함
+- 완료 내역:
+  - CourseJpaRepository에 `tryOccupySeat`, `releaseSeat` 조건부 원자성 update 추가
+  - CourseRepository wrapper에 boolean 반환 메서드 추가
+  - OPEN/모집 기간/정원 조건과 좌석 반납 동작을 Testcontainers MySQL로 검증
+- 현재 검증 가능 항목:
+  - 정원이 남은 OPEN Course 좌석 확보 성공
+  - 정원이 찬 Course 좌석 확보 실패
+  - DRAFT 또는 모집 마감 Course 좌석 확보 실패
+  - 좌석 반납 성공 및 0 미만 감소 방지
+  - 모집 시작 전/CLOSED/없는 Course 좌석 확보 실패
+  - 좌석 확보 누적 증가 검증
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.repository.CourseCapacityRepositoryTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.course.repository.*'` 통과
+  - `./gradlew test` 통과
+
 ## Slice 8. 결제 확정과 취소
 
 - 유형: AFK
