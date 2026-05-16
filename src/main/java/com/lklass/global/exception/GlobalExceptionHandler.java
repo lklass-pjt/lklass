@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -59,6 +60,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(errorCode.httpStatus())
                 .body(CommonResponse.fail(errorCode.code(), message, traceId));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<CommonResponse<Void>> handleAccessDenied(AccessDeniedException exception) {
+        ErrorCode errorCode = GlobalErrorCode.FORBIDDEN;
+        String traceId = MDC.get(TraceContext.TRACE_ID_KEY);
+
+        AppLog.warn(log, errorCode.code(), exception.getMessage());
+
+        return ResponseEntity
+                .status(errorCode.httpStatus())
+                .body(CommonResponse.fail(errorCode.code(), errorCode.message(), traceId));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

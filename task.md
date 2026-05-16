@@ -144,12 +144,34 @@ workflow: implement
 
 ### Slice 5-B. Course 생성 API
 
-- 상태: 대기
+- 상태: 완료
 - 목표:
   - creator/admin이 Course 생성
   - student는 Course 생성 불가
   - 생성된 Course는 `DRAFT` 상태
   - 생성 시 CREATED 상태 이력이 같은 트랜잭션에서 저장됨
+- 진행 내역:
+  - Slice 5-B1 완료: CourseJpaRepository, CourseRepository wrapper, CourseStatusHistory repository 추가
+  - Slice 5-B1 완료: CourseService 생성 use case 추가
+  - Slice 5-B1 완료: Course 생성 시 CREATED 상태 이력 저장 검증
+  - Slice 5-B1 보정: CourseService가 엔티티 대신 CourseCreateResult를 반환하도록 변경
+  - Slice 5-B2 완료: CourseController, Course 생성 request/response DTO 추가
+  - Slice 5-B2 완료: `@PreAuthorize` 기반 Course 생성 권한 검증 추가
+  - Slice 5-B2 완료: CREATOR는 본인 명의 생성, ADMIN은 creatorId 지정 생성 정책 적용
+  - Slice 5-B2 완료: 서비스 method security 거부 예외가 403 공통 응답으로 내려가도록 보강
+  - Slice 5-B2 보강: ADMIN 대리 생성 시 상태 이력의 changedBy를 실제 행위자인 ADMIN으로 기록
+  - 테스트 워크플로우 보강: Course 생성 테스트를 API 계약, 권한 정책, 서비스 통합 테스트로 분리
+  - 테스트 워크플로우 보강: CoursePermissionTest에서 CREATOR/ADMIN/STUDENT 권한 조합 전체 검증
+  - 테스트 워크플로우 보강: CourseControllerTest는 정상 생성, 401, 대표 403, validation 400 API 계약만 검증
+  - 테스트 워크플로우 보강: CourseServiceTest는 저장 성공, creator 존재/role 검증, `@PreAuthorize` 대표 차단 검증으로 정리
+- 검증:
+  - `./gradlew test --tests com.lklass.domain.course.security.CoursePermissionTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest --tests com.lklass.domain.course.service.CourseServiceTest` 통과
+  - `./gradlew test --tests com.lklass.domain.course.entity.CourseEntityTest --tests com.lklass.domain.course.service.CourseServiceTest --tests com.lklass.domain.course.controller.CourseControllerTest` 통과
+  - `./gradlew test` 통과
+  - `./gradlew check` 통과
 - 범위:
   - CourseJpaRepository
   - CourseRepository wrapper
