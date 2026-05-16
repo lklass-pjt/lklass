@@ -1,6 +1,8 @@
 package com.lklass.domain.enrollment.entity;
 
+import com.lklass.domain.enrollment.exception.EnrollmentErrorCode;
 import com.lklass.global.entity.BaseTimeEntity;
+import com.lklass.global.exception.BusinessException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -53,5 +55,14 @@ public class Enrollment extends BaseTimeEntity {
 
     public static Enrollment create(Long courseId, Long userId, LocalDateTime enrolledAt) {
         return new Enrollment(courseId, userId, enrolledAt);
+    }
+
+    public void confirm(LocalDateTime confirmedAt) {
+        Objects.requireNonNull(confirmedAt, "confirmedAt must not be null");
+        if (status != EnrollmentStatus.PENDING) {
+            throw new BusinessException(EnrollmentErrorCode.INVALID_ENROLLMENT_STATUS);
+        }
+        this.status = EnrollmentStatus.CONFIRMED;
+        this.confirmedAt = confirmedAt;
     }
 }

@@ -479,7 +479,7 @@ workflow: implement
 
 - 유형: AFK
 - 선행 조건: Slice 7
-- 상태: 대기
+- 상태: 진행 중
 - 실행/검증 가능 항목:
   - `PENDING -> CONFIRMED` 성공
   - 잘못된 결제 확정 실패
@@ -492,6 +492,35 @@ workflow: implement
   - 취소 use case
   - cancel reason
   - Clock 기반 취소 기한 테스트
+
+### Slice 8-A. 결제 확정 use case
+
+- 상태: 완료
+- 목표:
+  - 외부 결제 연동 없이 신청 상태를 `PENDING -> CONFIRMED`로 확정
+  - 결제 확정 시각과 상태 이력을 저장
+- 완료 내역:
+  - Enrollment `confirm` 도메인 메서드 추가
+  - EnrollmentService `confirmPayment` use case 추가
+  - 결제 확정 요청자를 `AuthenticatedUser`로 받고 신청 소유자 검증 추가
+  - 결제 확정 이력의 changedBy를 실제 요청자인 STUDENT로 기록
+  - EnrollmentErrorCode에 신청 없음/잘못된 상태 오류 추가
+- 현재 검증 가능 항목:
+  - Enrollment `confirm` 도메인 메서드의 `PENDING -> CONFIRMED` 성공
+  - Enrollment `confirm` 실패 시 상태 변경 방지
+  - PENDING 신청 결제 확정 성공
+  - CONFIRMED 상태와 `confirmedAt` 저장
+  - ActiveEnrollment와 Course 좌석 점유 유지
+  - PAYMENT_CONFIRMED 상태 이력 저장
+  - 다른 사용자의 신청 결제 확정 실패
+  - 존재하지 않는 신청 결제 확정 실패
+  - 이미 CONFIRMED인 신청 재확정 실패
+- 검증:
+  - 테스트 워크플로우 보강: Enrollment `confirm` 도메인 메서드 성공/실패 규칙 테스트 추가
+  - `./gradlew test --tests com.lklass.domain.enrollment.entity.EnrollmentEntityTest` 통과
+  - `./gradlew test --tests com.lklass.domain.enrollment.service.EnrollmentServiceTest` 통과
+  - `./gradlew test --tests 'com.lklass.domain.enrollment.*'` 통과
+  - `./gradlew test` 통과
 
 ## Slice 9. PENDING 신청 만료
 

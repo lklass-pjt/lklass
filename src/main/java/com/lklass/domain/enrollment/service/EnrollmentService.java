@@ -63,6 +63,28 @@ public class EnrollmentService {
         return EnrollmentApplyResult.from(enrollment);
     }
 
+    @PreAuthorize("hasRole('STUDENT')")
+    @Transactional
+    public void confirmPayment(AuthenticatedUser actor, Long enrollmentId) {
+        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+                .orElseThrow(() -> new BusinessException(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND));
+        if (!enrollment.getUserId().equals(actor.userId())) {
+            throw new BusinessException(EnrollmentErrorCode.ENROLLMENT_NOT_FOUND);
+        }
+        EnrollmentStatus fromStatus = enrollment.getStatus();
+        LocalDateTime now = LocalDateTime.now(clock);
+
+        enrollment.confirm(now);
+        enrollmentRepository.saveStatusHistory(EnrollmentStatusHistory.record(
+                enrollment,
+                fromStatus,
+                enrollment.getStatus(),
+                EnrollmentStatusChangeReason.PAYMENT_CONFIRMED,
+                now,
+                EnrollmentStatusChangedBy.user(actor.userId())
+        ));
+    }
+
     private BusinessException resolveEnrollmentFailure(Long courseId, LocalDateTime now) {
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new BusinessException(CourseErrorCode.COURSE_NOT_FOUND));
